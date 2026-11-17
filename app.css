@@ -139,3 +139,28 @@ dialog h3 { font-size: 1rem; margin-top: 16px; color: var(--muted); }
 }
 .actions .danger { color: var(--stopped); border-color: #e6c7c7; }
 .actions .primary { margin: 0; border: 0; }
+
+/* Add / update form */
+fieldset { border: 0; padding: 0; margin: 14px 0; }
+legend { font-weight: 600; padding: 0; margin-bottom: 8px; }
+textarea { resize: vertical; min-height: 110px; }
+.seg { display: grid; grid-template-columns: 1fr 1fr 1.6fr; gap: 6px; }
+.seg button, .scores button {
+  min-height: 48px; border-radius: 10px; border: 1px solid var(--line); background: #fff; font-weight: 600;
+}
+.seg button.on { background: var(--green); border-color: var(--green); color: #fff; }
+.scores { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.scores button.on { background: var(--spine); border-color: var(--spine); color: var(--spine-ink); }
+.banner {
+  background: #fbf0d9; border: 1px solid #ecd6a6; color: #5d430d;
+  border-radius: 10px; padding: 10px 12px; margin: -4px 0 8px;
+}
+.banner b { font-family: var(--serif); }
+.cancel { display: block; margin: 10px auto 0; min-height: 44px; color: var(--muted); }
+
+.toast {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(80px + env(safe-area-inset-bottom)); z-index: 20;
+  background: var(--ink); color: #fff; padding: 12px 18px; border-radius: 999px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.2); max-width: calc(100% - 32px); text-align: center;
+}

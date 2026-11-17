@@ -56,8 +56,40 @@
     </section>
 
     <section id="view-add" class="view card" hidden>
-      <h2>Add a book</h2>
-      <p class="muted">Coming in the next stage.</p>
+      <h2 id="add-heading">Add a book</h2>
+      <form id="add-form" novalidate autocomplete="off">
+        <label>Title
+          <input id="f-title" type="text" list="title-suggestions" required>
+          <datalist id="title-suggestions"></datalist>
+        </label>
+        <div class="banner" id="dup-banner" role="status" hidden></div>
+
+        <label id="author-wrap">Author
+          <input id="f-author" type="text">
+        </label>
+
+        <fieldset>
+          <legend>Status</legend>
+          <div class="seg" id="f-status">
+            <button type="button" data-status="Read" class="on">Read</button>
+            <button type="button" data-status="TBR">TBR</button>
+            <button type="button" data-status="Stopped Reading">Stopped Reading</button>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Score <span class="muted small" id="score-hint">(needed for Read)</span></legend>
+          <div class="scores" id="f-score"></div>
+        </fieldset>
+
+        <label>Commentary <span class="muted small">(optional)</span>
+          <textarea id="f-comment" rows="4" placeholder="What did you love, or not?"></textarea>
+        </label>
+
+        <p class="msg error" id="add-error" role="alert" hidden></p>
+        <button type="submit" class="primary" id="add-btn">Add book</button>
+        <button type="button" class="link cancel" id="add-cancel" hidden>Cancel editing</button>
+      </form>
     </section>
 
     <section id="view-recommend" class="view card" hidden>
@@ -71,6 +103,8 @@
     <button type="button" data-tab="add"><span aria-hidden="true">✍️</span>Add</button>
     <button type="button" data-tab="recommend"><span aria-hidden="true">✨</span>Recommend</button>
   </nav>
+
+  <div class="toast" id="toast" role="status" hidden></div>
 
   <dialog id="detail">
     <article>

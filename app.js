@@ -121,6 +121,7 @@ function sortedBooks() {
 }
 
 function renderBooks() {
+  refreshSuggestions();
   const q = normKey(S.q);
   const list = sortedBooks().filter((b) =>
     (S.filter === 'All' || b.status === S.filter) &&
@@ -172,7 +173,163 @@ function openDetail(key) {
   $('detail').showModal();
 }
 
+// ---------- add / update form ----------
+// mode: 'add' (new book), 'update' (title matches an existing book), 'edit' (full edit from Library)
+const F = { mode: 'add', match: null, originalTitle: null, score: null, status: 'Read', saving: false };
+
+function buildScores() {
+  $('f-score').innerHTML = Array.from({ length: 10 }, (_, i) =>
+    `<button type="button" data-score="${i + 1}" aria-pressed="false">${i + 1}</button>`).join('');
+}
+
+function setScore(n) {
+  F.score = n;
+  document.querySelectorAll('#f-score button').forEach((b) => {
+    const on = Number(b.dataset.score) === n;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', on);
+  });
+}
+
+function setStatus(s) {
+  F.status = s;
+  document.querySelectorAll('#f-status button').forEach((b) => b.classList.toggle('on', b.dataset.status === s));
+  $('score-hint').textContent = s === 'Read' ? '(needed for Read)' : '(optional)';
+}
+
+function setFormLabels() {
+  const labels = {
+    add: ['Add a book', 'Add book'],
+    update: ['Update a book', 'Update book'],
+    edit: ['Edit book', 'Save changes']
+  }[F.mode];
+  $('add-heading').textContent = labels[0];
+  $('add-btn').textContent = labels[1];
+  $('author-wrap').hidden = F.mode === 'update';
+  $('add-cancel').hidden = F.mode !== 'edit';
+}
+
+function fillFrom(b) {
+  setScore(b.rating || null);
+  setStatus(b.status);
+  $('f-comment').value = b.commentary || '';
+}
+
+function resetForm() {
+  Object.assign(F, { mode: 'add', match: null, originalTitle: null });
+  $('add-form').reset();
+  setScore(null);
+  setStatus('Read');
+  $('dup-banner').hidden = true;
+  $('add-error').hidden = true;
+  setFormLabels();
+}
+
+function onTitleInput() {
+  if (F.mode === 'edit') return;
+  const key = normKey($('f-title').value);
+  const match = key ? S.books.find((b) => normKey(b.title) === key) : null;
+  if (match && match !== F.match) {
+    F.mode = 'update';
+    F.match = match;
+    const scored = match.rating ? `scored ${match.rating}` : 'not scored yet';
+    $('dup-banner').innerHTML = `Already in your library: <b>${esc(match.title)}</b>, ${scored}, ${esc(match.status)}`;
+    $('dup-banner').hidden = false;
+    fillFrom(match);
+    setFormLabels();
+  } else if (!match && F.mode === 'update') {
+    F.mode = 'add';
+    F.match = null;
+    $('dup-banner').hidden = true;
+    fillFrom({ rating: null, status: 'Read', commentary: '' });
+    setFormLabels();
+  }
+}
+
+/** Called from the book detail view (Edit). */
+function startEdit(b) {
+  resetForm();
+  Object.assign(F, { mode: 'edit', originalTitle: b.title });
+  $('f-title').value = b.title;
+  $('f-author').value = b.author;
+  fillFrom(b);
+  setFormLabels();
+  goTab('add');
+}
+
+function refreshSuggestions() {
+  $('title-suggestions').innerHTML = S.books.map((b) => `<option value="${esc(b.title)}">`).join('');
+}
+
+function formError(text) {
+  $('add-error').textContent = text;
+  $('add-error').hidden = false;
+}
+
+async function submitBook(e) {
+  e.preventDefault();
+  if (F.saving) return;
+  $('add-error').hidden = true;
+  const title = $('f-title').value.trim();
+  const author = $('f-author').value.trim();
+  if (!title) return formError('Please add a title.');
+  if (F.mode === 'add' && !author) return formError('Please add the author.');
+  if (F.status === 'Read' && !F.score) return formError('Please tap a score from 1 to 10 for a book you’ve read.');
+
+  const book = {
+    title: F.mode === 'update' ? F.match.title : title,
+    author: F.mode === 'update' ? F.match.author : author,
+    rating: F.score,
+    commentary: $('f-comment').value.trim(),
+    status: F.status
+  };
+  const payload = { user: S.user, book };
+  if (F.mode === 'edit') payload.originalTitle = F.originalTitle;
+
+  F.saving = true;
+  const btn = $('add-btn'), label = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    const res = await api('upsert', payload);
+    const oldKey = normKey(F.mode === 'edit' ? F.originalTitle : res.book.title);
+    const i = S.books.findIndex((b) => normKey(b.title) === oldKey);
+    if (i >= 0) S.books[i] = res.book; else S.books.push(res.book);
+    store.set('rl.books.' + S.user, S.books);
+    renderBooks();
+    const wasEdit = F.mode === 'edit';
+    resetForm();
+    toast(res.created ? 'Added to your library' : 'Updated');
+    if (wasEdit) goTab('library');
+  } catch (err) {
+    formError(`Couldn’t save just now – everything you typed is still here, so just tap “${label}” to try again. (${err.message})`);
+  } finally {
+    F.saving = false;
+    btn.disabled = false;
+    if (btn.textContent === 'Saving…') btn.textContent = label;
+  }
+}
+
+let toastTimer;
+function toast(text) {
+  const t = $('toast');
+  t.textContent = text;
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.hidden = true; }, 2600);
+}
+
 // ---------- wiring ----------
+buildScores();
+$('add-form').addEventListener('submit', submitBook);
+$('f-title').addEventListener('input', onTitleInput);
+$('f-score').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  const n = Number(b.dataset.score);
+  setScore(F.score === n ? null : n);   // tap again to clear
+});
+$('f-status').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setStatus(b.dataset.status); });
+$('add-cancel').addEventListener('click', () => { resetForm(); goTab('library'); });
+
 $('connect-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const url = $('cfg-url').value.trim();
@@ -207,6 +364,7 @@ document.querySelectorAll('.person').forEach((b) => b.addEventListener('click', 
   $('search').value = '';
   document.querySelectorAll('.chip').forEach((c) => c.classList.toggle('on', c.dataset.filter === 'All'));
   S.tab = 'library';
+  resetForm();
   showApp();
 }));
 
