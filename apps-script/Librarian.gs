@@ -174,7 +174,7 @@ var CHAT_SERVICES = {
     models: ['mistralai/mistral-small-3.2-24b-instruct:free', 'meta-llama/llama-3.3-70b-instruct:free'],
     loose: true, headers: { 'X-Title': 'Our Reading Library' } },
   groq: { label: 'Groq', base: 'https://api.groq.com/openai/v1/', key: 'GROQ_API_KEY', modelProp: 'GROQ_MODEL',
-    models: ['openai/gpt-oss-120b', 'llama-3.3-70b-versatile'] }
+    models: ['openai/gpt-oss-120b', 'qwen/qwen3.8-27b'] }
 };
 
 function prop_(k) { return PropertiesService.getScriptProperties().getProperty(k); }
