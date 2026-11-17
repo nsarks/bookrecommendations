@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#5b2a1d">
+  <title>Our Reading Library</title>
+  <meta name="description" content="Nick and Sophie's reading lists and personal librarian.">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="icon" href="icons/icon-192.png" sizes="192x192">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="app.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="top" id="top">
+    <h1>Our Reading Library</h1>
+    <p class="who" id="who" hidden>
+      <span><b id="who-name"></b>’s shelf ·</span>
+      <button type="button" class="link" id="switch-user">switch user</button>
+      <button type="button" class="icon" id="open-settings" aria-label="Connection settings">⚙︎</button>
+    </p>
+  </header>
+
+  <main>
+    <!-- First launch on a phone: where is the backend, and what's the passcode? -->
+    <section id="view-connect" class="view card" hidden>
+      <h2>Connect to your library</h2>
+      <p class="muted">You only need to do this once on each phone.</p>
+      <form id="connect-form">
+        <label>Backend address
+          <input id="cfg-url" type="url" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec" required>
+        </label>
+        <label>Passcode
+          <input id="cfg-pass" type="password" autocomplete="current-password" required>
+        </label>
+        <button type="submit" class="primary" id="connect-btn">Connect</button>
+        <p class="msg" id="connect-msg" role="status"></p>
+      </form>
+    </section>
+
+    <section id="view-pick" class="view" hidden>
+      <h2 class="centre">Who’s reading?</h2>
+      <div class="pick">
+        <button type="button" class="person" data-user="Sophie">Sophie</button>
+        <button type="button" class="person" data-user="Nick">Nick</button>
+      </div>
+    </section>
+
+    <section id="view-library" class="view" hidden>
+      <input id="search" type="search" placeholder="Search title or author" aria-label="Search your library">
+      <div class="chips" role="group" aria-label="Filter by status">
+        <button type="button" class="chip on" data-filter="All">All</button>
+        <button type="button" class="chip" data-filter="Read">Read</button>
+        <button type="button" class="chip" data-filter="TBR">TBR</button>
+        <button type="button" class="chip" data-filter="Stopped Reading">Stopped Reading</button>
+      </div>
+      <p class="muted small" id="lib-note" role="status"></p>
+      <ul class="books" id="book-list"></ul>
+    </section>
+
+    <section id="view-add" class="view card" hidden>
+      <h2 id="add-heading">Add a book</h2>
+      <form id="add-form" novalidate autocomplete="off">
+        <label>Title
+          <input id="f-title" type="text" list="title-suggestions" required>
+          <datalist id="title-suggestions"></datalist>
+        </label>
+        <div class="banner" id="dup-banner" role="status" hidden></div>
+
+        <label id="author-wrap">Author <span class="muted small">(optional)</span>
+          <input id="f-author" type="text">
+        </label>
+
+        <fieldset>
+          <legend>Status</legend>
+          <div class="seg" id="f-status">
+            <button type="button" data-status="Read" class="on">Read</button>
+            <button type="button" data-status="TBR">TBR</button>
+            <button type="button" data-status="Stopped Reading">Stopped Reading</button>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Score <span class="muted small" id="score-hint">(needed for Read)</span></legend>
+          <div class="scores" id="f-score"></div>
+        </fieldset>
+
+        <label>Commentary <span class="muted small">(optional)</span>
+          <textarea id="f-comment" rows="4" placeholder="What did you love, or not?"></textarea>
+        </label>
+
+        <p class="msg error" id="add-error" role="alert" hidden></p>
+        <button type="submit" class="primary" id="add-btn">Add book</button>
+        <button type="button" class="link cancel" id="add-cancel" hidden>Cancel editing</button>
+      </form>
+    </section>
+
+    <section id="view-recommend" class="view" hidden>
+      <form id="rec-form" class="card">
+        <h2>Ask the librarian</h2>
+        <label for="rec-steer">Anything specific in mind? <span class="muted small">(optional)</span></label>
+        <textarea id="rec-steer" rows="2" placeholder="e.g. a non-fiction pick"></textarea>
+        <button type="submit" class="primary" id="rec-btn">Recommend</button>
+      </form>
+
+      <div class="thinking card" id="rec-loading" role="status" hidden>
+        <div class="books-anim" aria-hidden="true"><span></span><span></span><span></span></div>
+        <p id="rec-loading-text">Browsing the shelves…</p>
+      </div>
+
+      <div class="card sorry" id="rec-error" role="alert" hidden></div>
+
+      <article class="reply" id="rec-reply" hidden></article>
+    </section>
+  </main>
+
+  <nav class="tabs" id="tabs" hidden>
+    <button type="button" data-tab="library" class="on"><span aria-hidden="true">📚</span>Library</button>
+    <button type="button" data-tab="add"><span aria-hidden="true">✍️</span>Add</button>
+    <button type="button" data-tab="recommend"><span aria-hidden="true">✨</span>Recommend</button>
+  </nav>
+
+  <div class="toast" id="toast" role="status" hidden></div>
+
+  <dialog id="detail">
+    <article>
+      <button type="button" class="icon close" id="detail-close" aria-label="Close">✕</button>
+      <h2 id="d-title"></h2>
+      <p class="author" id="d-author"></p>
+      <p class="meta"><span class="pill" id="d-status"></span> <span class="score" id="d-score"></span></p>
+      <p class="flag" id="d-flag" hidden></p>
+      <h3>Commentary</h3>
+      <p class="commentary" id="d-comment"></p>
+      <p class="muted small" id="d-dates"></p>
+      <div class="actions" id="d-actions">
+        <button type="button" class="primary" id="d-markread">Mark as read</button>
+        <button type="button" id="d-edit">Edit</button>
+        <button type="button" id="d-status-btn">Change status</button>
+        <button type="button" class="danger" id="d-delete">Delete</button>
+      </div>
+
+      <!-- Change status -->
+      <div class="panel" id="p-status" hidden>
+        <h3>Change status to…</h3>
+        <div class="seg" id="p-status-opts">
+          <button type="button" data-status="Read">Read</button>
+          <button type="button" data-status="TBR">TBR</button>
+          <button type="button" data-status="Stopped Reading">Stopped Reading</button>
+        </div>
+        <button type="button" class="link cancel" data-back>Back</button>
+      </div>
+
+      <!-- Mark as read: score + optional commentary -->
+      <div class="panel" id="p-read" hidden>
+        <h3>How would you score it?</h3>
+        <div class="scores" id="p-read-score"></div>
+        <label>Commentary <span class="muted small">(optional)</span>
+          <textarea id="p-read-comment" rows="3" placeholder="What did you think?"></textarea>
+        </label>
+        <button type="button" class="primary" id="p-read-save">Save as read</button>
+        <button type="button" class="link cancel" data-back>Back</button>
+      </div>
+
+      <!-- Delete confirmation -->
+      <div class="panel" id="p-delete" hidden>
+        <p>Delete <b id="p-delete-title"></b> from your library? This can’t be undone.</p>
+        <div class="actions">
+          <button type="button" class="danger" id="p-delete-yes">Yes, delete it</button>
+          <button type="button" data-back>Keep it</button>
+        </div>
+      </div>
+
+      <p class="msg error" id="d-msg" role="alert" hidden></p>
+    </article>
+  </dialog>
+</body>
+</html>

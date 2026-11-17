@@ -1,0 +1,6 @@
+# Never commit reading data or secrets
+*.csv
+*.gsheet
+.env
+.DS_Store
+node_modules/
