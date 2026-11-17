@@ -45,20 +45,19 @@ assert.match(be.sheets.Sophie.data[3][7], /filled in by the librarian/);
 assert.ok(be.sheets.Meta.data[1][1] > lastChat);
 assert.strictEqual(be.sheets.Meta.data[2][1], lastChat);   // Nick untouched
 
-// 2. Recommending something already owned triggers a retry with an exclusion list
-let n = 0;
-be = makeBackend(tabs(), props, () => (++n === 1
-  ? reply([rec('rebecca!'), rec('The Thirteenth Tale'), rec('Klara and the Sun', 'Wildcard')])
-  : reply([rec('My Cousin Rachel'), rec('The Thirteenth Tale'), rec('Klara and the Sun', 'Wildcard')])));
+// 2. One request; owned books and repeats are skipped, keeping 2 Safe Bets + 1 Wildcard
+be = makeBackend(tabs(), props, () => reply([rec('rebecca!'), rec('My Cousin Rachel'), rec('my cousin rachel'),
+  rec('The Thirteenth Tale'), rec('Klara and the Sun', 'Wildcard'), rec('Never Let Me Go', 'Wildcard')]));
 r = be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' });
-assert.strictEqual(be.calls.length, 2);
-assert.match(be.calls[1].body.contents[0].parts[0].text, /ALREADY IN THE LIBRARY.*rebecca!/);
+assert.strictEqual(be.calls.length, 1);
+assert.match(be.calls[0].body.systemInstruction.parts[0].text, /5 candidates/);
 assert.deepStrictEqual(r.reply.recommendations.map((x) => x.title), ['My Cousin Rachel', 'The Thirteenth Tale', 'Klara and the Sun']);
 
-// 3. If it keeps suggesting owned books, they are filtered out anyway
+// 3. If too few are left, it shows what it has without asking again
 be = makeBackend(tabs(), props, () => reply([rec('Rebecca'), rec('The Thirteenth Tale'), rec('Klara and the Sun', 'Wildcard')]));
 r = be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' });
 assert.strictEqual(r.reply.recommendations.length, 2);
+assert.strictEqual(be.calls.length, 1);
 
 // 4. Empty library, unknown user and Gemini errors
 be = makeBackend(tabs(), props, () => reply([]));
@@ -73,7 +72,7 @@ be = makeBackend(tabs(), { PASSCODE: 'p' }, () => reply([]));
 assert.match(be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' }).error, /GEMINI_API_KEY/);
 assert.match(be.handle({ passcode: 'x', action: 'recommend', user: 'Sophie' }).error, /Wrong passcode/);
 
-// 5. Busy model: retried once, then falls back to the next model
+// 5. Busy model: retried once after a pause, then ONE fallback. Never more than 3 calls.
 be = makeBackend(tabs(), Object.assign({ GEMINI_MODEL: 'gemini-3.8-flash' }, props),
   (body, model) => (model === 'gemini-3.8-flash' ? 503 : reply([rec('My Cousin Rachel')])));
 r = be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' });
@@ -81,7 +80,16 @@ assert.ok(r.ok, r.error);
 assert.deepStrictEqual(be.calls.map((c) => c.model), ['gemini-3.8-flash', 'gemini-3.8-flash', 'gemini-flash-latest']);
 assert.strictEqual(r.model, 'gemini-flash-latest');
 be = makeBackend(tabs(), props, () => 503);
-assert.match(be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' }).error, /very busy/);
+r = be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' });
+assert.match(r.error, /very busy.*gemini-flash-latest: 503, gemini-flash-latest: 503, gemini-2.5-flash: 503/);
+assert.strictEqual(be.calls.length, 3);
+// Quota error: no same-model retry, one fallback, then a one-minute cool-down
+be = makeBackend(tabs(), props, () => 429);
+r = be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' });
+assert.match(r.error, /limit was reached/);
+assert.strictEqual(be.calls.length, 2);
+assert.match(be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' }).error, /short breather/);
+assert.strictEqual(be.calls.length, 2);
 be = makeBackend(tabs(), props, () => 400);
 assert.match(be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' }).error, /could not be reached/);
 

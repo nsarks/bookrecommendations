@@ -35,7 +35,7 @@ function makeBackend(tabs, props, gemini) {
     CacheService: { getScriptCache: () => ({ get: (k) => cache[k], put: (k, v) => { cache[k] = v; }, remove: (k) => delete cache[k] }) },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     SpreadsheetApp: { getActiveSpreadsheet: () => ({ getSheetByName: (n) => sheets[n] }) },
-    ContentService: {}, Logger: { log() {} },
+    ContentService: {}, Logger: { log() {} }, console: { log() {} },
     Utilities: { formatDate: (d) => d.toDateString(), sleep() {} },
     UrlFetchApp: {
       fetch: (url, opts) => {
