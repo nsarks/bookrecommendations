@@ -164,3 +164,12 @@ textarea { resize: vertical; min-height: 110px; }
   background: var(--ink); color: #fff; padding: 12px 18px; border-radius: 999px;
   box-shadow: 0 4px 14px rgba(0,0,0,.2); max-width: calc(100% - 32px); text-align: center;
 }
+
+/* Detail panels */
+.panel { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px; }
+.panel h3 { margin-top: 0; }
+.panel .primary { margin-top: 12px; }
+.panel .actions { margin-top: 8px; }
+.danger.solid { background: var(--stopped); color: #fff; border: 0; }
+.seg button:disabled { opacity: .45; }
+.unknown { font-style: italic; }

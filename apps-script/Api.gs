@@ -170,7 +170,6 @@ function upsertBook_(sheet, input, originalTitle) {
   }
 
   if (originalTitle) throw new Error('Could not find "' + originalTitle + '" to update.');
-  if (!b.author) throw new Error('An author is needed for a new book.');
   var nr = new Array(width).fill('');
   nr[c.Title] = b.title;
   nr[c.Author] = b.author;

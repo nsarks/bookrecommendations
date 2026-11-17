@@ -88,3 +88,9 @@ The phone remembers the address, passcode and chosen person. Use **switch user**
 
 ### Trying it locally (optional, for developing)
 `node tests/mock-server.js`, then open http://localhost:8080 and use backend address `http://localhost:8080/exec` with passcode `test`. This uses made-up sample books, not your Sheet.
+
+## Stage 4–5: Adding, updating and managing books
+
+Nothing to set up for the app itself: GitHub Pages updates on its own a minute or two after each push. If your phone shows an old version, pull down to refresh.
+
+**Backend update (Author is now optional):** paste the latest [`apps-script/Api.gs`](../apps-script/Api.gs) over your `Api` file, save, then **Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy**. The `/exec` address stays the same.

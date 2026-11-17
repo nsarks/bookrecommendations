@@ -33,7 +33,9 @@ assert.strictEqual(sheets.Nick.data[1][2], 9);
 // Validation
 assert.match(call({ action: 'upsert', user: 'Nick', book: { title: 'X', author: 'Y', status: 'Read' } }).error, /score is needed/);
 assert.match(call({ action: 'upsert', user: 'Nick', book: { title: 'X', author: 'Y', rating: 11, status: 'Read' } }).error, /1 to 10/);
-assert.match(call({ action: 'upsert', user: 'Nick', book: { title: 'X', status: 'TBR' } }).error, /author is needed/);
+// Author is optional (the librarian can fill it in later)
+assert.ok(call({ action: 'upsert', user: 'Nick', book: { title: 'No Author Yet', status: 'TBR' } }).created);
+assert.ok(call({ action: 'delete', user: 'Nick', title: 'No Author Yet' }).deleted);
 
 // Filling in a missing rating clears "Needs attention"
 r = call({ action: 'upsert', user: 'Sophie', book: { title: 'atmosphere', rating: 8, status: 'Read' } });

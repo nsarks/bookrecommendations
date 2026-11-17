@@ -142,7 +142,7 @@ function renderBooks() {
   $('book-list').innerHTML = list.map((b) => `
     <li><button type="button" class="book" data-key="${esc(normKey(b.title))}">
       <span class="t">${esc(b.title)}</span>
-      <span class="a">${esc(b.author)}${b.attention ? ' <span class="flagdot" title="Needs attention">⚑</span>' : ''}</span>
+      <span class="a">${b.author ? esc(b.author) : '<span class="unknown">Author unknown</span>'}${b.attention ? ' <span class="flagdot" title="Needs attention">⚑</span>' : ''}</span>
       <span class="side">
         ${scoreHtml(b)}
         <span class="pill ${b.status.split(' ')[0]}">${esc(b.status)}</span>
@@ -155,11 +155,21 @@ function scoreHtml(b, long) {
 }
 
 // ---------- book detail ----------
+const D = { book: null, score: null, busy: false };
+
 function openDetail(key) {
   const b = S.books.find((x) => normKey(x.title) === key);
   if (!b) return;
+  renderDetail(b);
+  showPanel(null);
+  $('detail').showModal();
+}
+
+function renderDetail(b) {
+  D.book = b;
   $('d-title').textContent = b.title;
-  $('d-author').textContent = b.author;
+  $('d-author').textContent = b.author || 'Author unknown';
+  $('d-author').classList.toggle('unknown', !b.author);
   $('d-status').textContent = b.status;
   $('d-status').className = 'pill ' + b.status.split(' ')[0];
   $('d-score').outerHTML = scoreHtml(b, true).replace('<span ', '<span id="d-score" ');
@@ -169,8 +179,79 @@ function openDetail(key) {
   $('d-comment').classList.toggle('muted', !b.commentary);
   const added = fmtDate(b.added), updated = fmtDate(b.updated);
   $('d-dates').textContent = added ? `Added ${added}` + (updated && updated !== added ? ` · Updated ${updated}` : '') : '';
-  $('d-actions').innerHTML = '';   // Edit / Change status / Delete arrive in a later stage
-  $('detail').showModal();
+  $('d-markread').hidden = b.status !== 'TBR';
+  $('p-delete-title').textContent = b.title;
+  document.querySelectorAll('#p-status-opts button').forEach((x) => { x.disabled = x.dataset.status === b.status; });
+}
+
+/** Shows one of the panels ('status', 'read', 'delete'), or the main buttons when null. */
+function showPanel(name) {
+  $('d-actions').hidden = !!name;
+  ['status', 'read', 'delete'].forEach((p) => { $('p-' + p).hidden = p !== name; });
+  $('d-msg').hidden = true;
+  if (name === 'read') {
+    setReadScore(D.book.rating || null);
+    $('p-read-comment').value = D.book.commentary || '';
+  }
+}
+
+function setReadScore(n) {
+  D.score = n;
+  document.querySelectorAll('#p-read-score button').forEach((x) => x.classList.toggle('on', Number(x.dataset.score) === n));
+}
+
+function setBusy(on) {
+  D.busy = on;
+  document.querySelectorAll('#detail button').forEach((x) => {
+    if (x.id === 'detail-close') return;
+    if (on) { x.dataset.wasDisabled = x.disabled; x.disabled = true; }
+    else { x.disabled = x.dataset.wasDisabled === 'true'; }
+  });
+}
+
+function detailError(text) {
+  $('d-msg').textContent = `Couldn’t save just now – please try again. (${text})`;
+  $('d-msg').hidden = false;
+}
+
+async function saveDetail(changes, message) {
+  if (D.busy) return;
+  const b = D.book;
+  setBusy(true);
+  try {
+    const res = await api('upsert', { user: S.user, book: {
+      title: b.title, author: b.author, rating: b.rating, commentary: b.commentary, status: b.status, ...changes } });
+    const i = S.books.findIndex((x) => normKey(x.title) === normKey(b.title));
+    if (i >= 0) S.books[i] = res.book;
+    store.set('rl.books.' + S.user, S.books);
+    renderBooks();
+    setBusy(false);
+    renderDetail(res.book);
+    showPanel(null);
+    toast(message);
+  } catch (err) {
+    setBusy(false);
+    detailError(err.message);
+  }
+}
+
+async function deleteDetail() {
+  if (D.busy) return;
+  const b = D.book;
+  setBusy(true);
+  try {
+    await api('delete', { user: S.user, title: b.title });
+    S.books = S.books.filter((x) => normKey(x.title) !== normKey(b.title));
+    store.set('rl.books.' + S.user, S.books);
+    renderBooks();
+    setBusy(false);
+    $('detail').close();
+    toast('Deleted');
+  } catch (err) {
+    setBusy(false);
+    $('d-msg').textContent = `Couldn’t delete just now – please try again. (${err.message})`;
+    $('d-msg').hidden = false;
+  }
 }
 
 // ---------- add / update form ----------
@@ -273,7 +354,6 @@ async function submitBook(e) {
   const title = $('f-title').value.trim();
   const author = $('f-author').value.trim();
   if (!title) return formError('Please add a title.');
-  if (F.mode === 'add' && !author) return formError('Please add the author.');
   if (F.status === 'Read' && !F.score) return formError('Please tap a score from 1 to 10 for a book you’ve read.');
 
   const book = {
@@ -380,6 +460,30 @@ document.querySelector('.chips').addEventListener('click', (e) => {
 });
 $('book-list').addEventListener('click', (e) => { const b = e.target.closest('.book'); if (b) openDetail(b.dataset.key); });
 $('detail-close').addEventListener('click', () => $('detail').close());
+$('p-read-score').innerHTML = Array.from({ length: 10 }, (_, i) =>
+  `<button type="button" data-score="${i + 1}">${i + 1}</button>`).join('');
+$('p-read-score').addEventListener('click', (e) => {
+  const x = e.target.closest('button'); if (!x) return;
+  const n = Number(x.dataset.score);
+  setReadScore(D.score === n ? null : n);
+  $('d-msg').hidden = true;
+});
+$('d-markread').addEventListener('click', () => showPanel('read'));
+$('d-status-btn').addEventListener('click', () => showPanel('status'));
+$('d-delete').addEventListener('click', () => showPanel('delete'));
+$('d-edit').addEventListener('click', () => { const b = D.book; $('detail').close(); startEdit(b); });
+document.querySelectorAll('#detail [data-back]').forEach((x) => x.addEventListener('click', () => showPanel(null)));
+$('p-status-opts').addEventListener('click', (e) => {
+  const x = e.target.closest('button'); if (!x || x.disabled) return;
+  const status = x.dataset.status;
+  if (status === 'Read' && !D.book.rating) return showPanel('read');   // a read book needs a score
+  saveDetail({ status }, 'Moved to ' + status);
+});
+$('p-read-save').addEventListener('click', () => {
+  if (!D.score) { $('d-msg').textContent = 'Please tap a score from 1 to 10.'; $('d-msg').hidden = false; return; }
+  saveDetail({ status: 'Read', rating: D.score, commentary: $('p-read-comment').value.trim() }, 'Marked as read');
+});
+$('p-delete-yes').addEventListener('click', deleteDetail);
 $('detail').addEventListener('click', (e) => { if (e.target === $('detail')) $('detail').close(); });
 
 start();

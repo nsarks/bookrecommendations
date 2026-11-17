@@ -64,7 +64,7 @@
         </label>
         <div class="banner" id="dup-banner" role="status" hidden></div>
 
-        <label id="author-wrap">Author
+        <label id="author-wrap">Author <span class="muted small">(optional)</span>
           <input id="f-author" type="text">
         </label>
 
@@ -116,7 +116,45 @@
       <h3>Commentary</h3>
       <p class="commentary" id="d-comment"></p>
       <p class="muted small" id="d-dates"></p>
-      <div class="actions" id="d-actions"></div>
+      <div class="actions" id="d-actions">
+        <button type="button" class="primary" id="d-markread">Mark as read</button>
+        <button type="button" id="d-edit">Edit</button>
+        <button type="button" id="d-status-btn">Change status</button>
+        <button type="button" class="danger" id="d-delete">Delete</button>
+      </div>
+
+      <!-- Change status -->
+      <div class="panel" id="p-status" hidden>
+        <h3>Change status to…</h3>
+        <div class="seg" id="p-status-opts">
+          <button type="button" data-status="Read">Read</button>
+          <button type="button" data-status="TBR">TBR</button>
+          <button type="button" data-status="Stopped Reading">Stopped Reading</button>
+        </div>
+        <button type="button" class="link cancel" data-back>Back</button>
+      </div>
+
+      <!-- Mark as read: score + optional commentary -->
+      <div class="panel" id="p-read" hidden>
+        <h3>How would you score it?</h3>
+        <div class="scores" id="p-read-score"></div>
+        <label>Commentary <span class="muted small">(optional)</span>
+          <textarea id="p-read-comment" rows="3" placeholder="What did you think?"></textarea>
+        </label>
+        <button type="button" class="primary" id="p-read-save">Save as read</button>
+        <button type="button" class="link cancel" data-back>Back</button>
+      </div>
+
+      <!-- Delete confirmation -->
+      <div class="panel" id="p-delete" hidden>
+        <p>Delete <b id="p-delete-title"></b> from your library? This can’t be undone.</p>
+        <div class="actions">
+          <button type="button" class="danger" id="p-delete-yes">Yes, delete it</button>
+          <button type="button" data-back>Keep it</button>
+        </div>
+      </div>
+
+      <p class="msg error" id="d-msg" role="alert" hidden></p>
     </article>
   </dialog>
 </body>
