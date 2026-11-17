@@ -5,11 +5,11 @@
  * Script Properties:
  *   GEMINI_API_KEY  (required)  from aistudio.google.com
  *   GEMINI_MODEL    (optional)  your preferred model; run testGemini() to see what's available.
- *                               If it fails, one fallback model is tried (see FALLBACK_MODELS).
+ *                               If it fails, FALLBACK_MODELS are tried (3 requests at most).
  */
 var DEFAULT_MODEL = 'gemini-flash-latest';
-// If your chosen model fails, the first of these that differs from it is tried once.
-var FALLBACK_MODELS = ['gemini-flash-latest', 'gemini-2.5-flash'];
+// If your chosen model is busy, out of quota or unavailable, these are tried in turn (3 requests at most).
+var FALLBACK_MODELS = ['gemini-3.7-flash', 'gemini-3.5-flash', 'gemini-flash-lite-latest'];
 var lastModelUsed = null;
 var GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/';
 
@@ -166,18 +166,17 @@ function geminiKey_() {
   return key;
 }
 
-/** Your chosen model, then one fallback. */
+/** Your chosen model, then fallbacks: three different models at most. */
 function geminiModels_() {
   var chosen = PropertiesService.getScriptProperties().getProperty('GEMINI_MODEL') || DEFAULT_MODEL;
-  var fallback = FALLBACK_MODELS.filter(function (m) { return m !== chosen; })[0];
-  return [chosen, fallback];
+  return [chosen].concat(FALLBACK_MODELS.filter(function (m) { return m !== chosen; })).slice(0, 3);
 }
 
 /**
- * At most 3 requests per question, to stay within free-tier limits:
- * the chosen model, one retry after a pause if Google is busy (503/500),
- * then a single fallback model. After a quota error (429) we pause all
- * requests for a minute rather than hammering Google.
+ * At most 3 requests per question, to stay within free-tier limits: one
+ * attempt on each of up to three different models. A busy model (503) is
+ * usually busy for a while, so we move on rather than retrying it. After a
+ * quota error (429) on every model we pause all requests for a minute.
  */
 function callGemini_(system, message, schema) {
   var cache = CacheService.getScriptCache();
@@ -189,13 +188,10 @@ function callGemini_(system, message, schema) {
     contents: [{ role: 'user', parts: [{ text: message }] }],
     generationConfig: { responseMimeType: 'application/json', responseSchema: schema, temperature: 1 }
   });
-  var plan = geminiModels_();
-  plan = [plan[0], plan[0], plan[1]];          // chosen, chosen again (only if busy), fallback
   var codes = [];
-  for (var i = 0; i < plan.length; i++) {
-    if (i === 1 && !/ (503|500)$/.test(codes[0])) continue;   // only retry the same model if it was busy
-    if (i === 1) Utilities.sleep(3000);
-    var res = UrlFetchApp.fetch(GEMINI_BASE + 'models/' + plan[i] + ':generateContent', {
+  var models = geminiModels_();
+  for (var i = 0; i < models.length; i++) {
+    var res = UrlFetchApp.fetch(GEMINI_BASE + 'models/' + models[i] + ':generateContent', {
       method: 'post',
       contentType: 'application/json',
       headers: { 'x-goog-api-key': geminiKey_() },
@@ -204,25 +200,25 @@ function callGemini_(system, message, schema) {
     });
     var code = res.getResponseCode();
     if (code === 200) {
-      lastModelUsed = plan[i];
+      lastModelUsed = models[i];
       var data = JSON.parse(res.getContentText());
       var parts = (((data.candidates || [])[0] || {}).content || {}).parts || [];
       var text = parts.filter(function (p) { return !p.thought && p.text; }).map(function (p) { return p.text; }).join('');
       if (!text) throw new Error('The librarian was lost for words. Please try again.');
       return JSON.parse(text);
     }
-    codes.push(plan[i] + ': ' + code);
-    console.log('Gemini ' + plan[i] + ' returned ' + code + ': ' + res.getContentText().slice(0, 500));
+    codes.push(models[i] + ': ' + code);
+    console.log('Gemini ' + models[i] + ' returned ' + code + ': ' + res.getContentText().slice(0, 500));
   }
   var detail = ' (' + codes.join(', ') + ')';
-  if (codes.some(function (c) { return / 429$/.test(c); })) {
+  if (codes.every(function (c) { return / 429$/.test(c); })) {
     cache.put('gemini-cooldown', '1', 60);
     throw new Error('The librarian is a little busy: the free per-minute or daily limit was reached. Please try again in a minute or two.' + detail);
   }
-  if (codes.some(function (c) { return / (503|500)$/.test(c); })) {
+  if (codes.some(function (c) { return / (503|500|429)$/.test(c); })) {
     throw new Error('Google’s servers are very busy just now. Please try again in a minute or two.' + detail);
   }
-  throw new Error('The librarian could not be reached' + detail + '. Run testGemini() in Apps Script for details.');
+  throw new Error('The librarian could not be reached' + detail + '. Run diagnoseGemini() in Apps Script for details.');
 }
 
 // ---------- memory: last chat time and missing authors ----------
@@ -292,46 +288,59 @@ function testRecommend() {
 
 /**
  * DIAGNOSTIC: run from the editor and paste the log to Claude.
- * Sends a handful of single requests, 6 seconds apart, and logs Google's exact
- * answer for each: a tiny hello, then Sophie's real prompt with and without
- * the strict reply format, and with "thinking" turned down.
+ * 1. Sends a tiny hello to each candidate model (5 seconds apart).
+ * 2. Sends Sophie's real recommendation request to the first two that answered.
+ * Ends with a suggested GEMINI_MODEL.
  */
+var DIAGNOSE_MODELS = ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash',
+  'gemini-flash-latest', 'gemini-3.5-flash-lite', 'gemini-flash-lite-latest'];
+
 function diagnoseGemini() {
-  var props = PropertiesService.getScriptProperties();
-  var models = [props.getProperty('GEMINI_MODEL') || DEFAULT_MODEL, 'gemini-2.5-flash'];
-  models = models.filter(function (m, i) { return models.indexOf(m) === i; });
-  var books = listBooks_(userSheet_('Sophie'));
-  var system = librarianSystem_('Sophie');
-  var message = librarianMessage_('Sophie', '', books, [], [], null);
-  Logger.log('Library: ' + books.length + ' books, prompt ' + (system.length + message.length) + ' characters.');
-
-  var tests = [];
-  models.forEach(function (m) {
-    tests.push([m, 'tiny hello', { contents: [{ parts: [{ text: 'Say hello in five words.' }] }] }]);
-    tests.push([m, 'full prompt, strict format', { systemInstruction: { parts: [{ text: system }] },
-      contents: [{ role: 'user', parts: [{ text: message }] }],
-      generationConfig: { responseMimeType: 'application/json', responseSchema: librarianSchema_() } }]);
-    tests.push([m, 'full prompt, plain JSON', { systemInstruction: { parts: [{ text: system }] },
-      contents: [{ role: 'user', parts: [{ text: message + '\n\nReply as JSON with keys greeting, newBooksComment, recommendations (title, author, type, pitch), closing, missingAuthors.' }] }],
-      generationConfig: { responseMimeType: 'application/json' } }]);
-    var thinking = /^gemini-2\.5/.test(m) ? { thinkingBudget: 512 } : { thinkingLevel: 'low' };
-    tests.push([m, 'full prompt, strict format, less thinking', { systemInstruction: { parts: [{ text: system }] },
-      contents: [{ role: 'user', parts: [{ text: message }] }],
-      generationConfig: { responseMimeType: 'application/json', responseSchema: librarianSchema_(), thinkingConfig: thinking } }]);
-  });
-
-  tests.forEach(function (t, i) {
-    if (i) Utilities.sleep(6000);
+  var send = function (model, body) {
     var start = Date.now();
-    var res = UrlFetchApp.fetch(GEMINI_BASE + 'models/' + t[0] + ':generateContent', {
+    var res = UrlFetchApp.fetch(GEMINI_BASE + 'models/' + model + ':generateContent', {
       method: 'post', contentType: 'application/json', muteHttpExceptions: true,
-      headers: { 'x-goog-api-key': geminiKey_() }, payload: JSON.stringify(t[2])
+      headers: { 'x-goog-api-key': geminiKey_() }, payload: JSON.stringify(body)
     });
-    var secs = ((Date.now() - start) / 1000).toFixed(1);
-    var body = res.getContentText();
-    var summary = res.getResponseCode() === 200
-      ? 'OK. Tokens: ' + JSON.stringify((JSON.parse(body).usageMetadata) || {})
-      : body.replace(/\s+/g, ' ').slice(0, 300);
-    Logger.log(t[0] + ' | ' + t[1] + ' | ' + res.getResponseCode() + ' in ' + secs + 's | ' + summary);
+    var text = res.getContentText();
+    var msg = res.getResponseCode() === 200 ? 'OK' : ((JSON.parse(text).error || {}).message || text).slice(0, 160);
+    return { code: res.getResponseCode(), secs: ((Date.now() - start) / 1000).toFixed(1), msg: msg, body: text };
+  };
+
+  Logger.log('STEP 1: tiny hello to each model');
+  var working = [];
+  DIAGNOSE_MODELS.forEach(function (m, i) {
+    if (i) Utilities.sleep(5000);
+    var r = send(m, { contents: [{ parts: [{ text: 'Say hello in five words.' }] }] });
+    Logger.log(m + ' | ' + r.code + ' in ' + r.secs + 's | ' + r.msg);
+    if (r.code === 200) working.push(m);
   });
+  if (!working.length) {
+    Logger.log('RESULT: no model answered. Google is very busy for free users right now; try again later, or ask Claude about a backup provider.');
+    return;
+  }
+
+  Logger.log('STEP 2: full recommendation request');
+  var books = listBooks_(userSheet_('Sophie'));
+  var body = {
+    systemInstruction: { parts: [{ text: librarianSystem_('Sophie') }] },
+    contents: [{ role: 'user', parts: [{ text: librarianMessage_('Sophie', '', books, [], [], null) }] }],
+    generationConfig: { responseMimeType: 'application/json', responseSchema: librarianSchema_(), temperature: 1 }
+  };
+  var best = null;
+  working.slice(0, 2).forEach(function (m) {
+    Utilities.sleep(5000);
+    var r = send(m, body);
+    var extra = '';
+    if (r.code === 200) {
+      var data = JSON.parse(r.body);
+      var out = JSON.parse(((data.candidates[0].content.parts || []).filter(function (p) { return !p.thought; })[0] || {}).text || '{}');
+      extra = ' | picks: ' + (out.recommendations || []).map(function (x) { return x.title + ' (' + x.type + ')'; }).join('; ');
+      if (!best) best = m;
+    }
+    Logger.log(m + ' | ' + r.code + ' in ' + r.secs + 's | ' + r.msg + extra);
+  });
+  Logger.log(best
+    ? 'RESULT: set Script Property GEMINI_MODEL to ' + best + ' (models that answered: ' + working.join(', ') + ')'
+    : 'RESULT: these answered a hello but not the full request: ' + working.join(', ') + '. Paste this log to Claude.');
 }

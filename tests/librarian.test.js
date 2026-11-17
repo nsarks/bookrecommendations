@@ -72,24 +72,24 @@ be = makeBackend(tabs(), { PASSCODE: 'p' }, () => reply([]));
 assert.match(be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' }).error, /GEMINI_API_KEY/);
 assert.match(be.handle({ passcode: 'x', action: 'recommend', user: 'Sophie' }).error, /Wrong passcode/);
 
-// 5. Busy model: retried once after a pause, then ONE fallback. Never more than 3 calls.
+// 5. Busy model: move straight on to the next model. Never more than 3 calls.
 be = makeBackend(tabs(), Object.assign({ GEMINI_MODEL: 'gemini-3.8-flash' }, props),
   (body, model) => (model === 'gemini-3.8-flash' ? 503 : reply([rec('My Cousin Rachel')])));
 r = be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' });
 assert.ok(r.ok, r.error);
-assert.deepStrictEqual(be.calls.map((c) => c.model), ['gemini-3.8-flash', 'gemini-3.8-flash', 'gemini-flash-latest']);
-assert.strictEqual(r.model, 'gemini-flash-latest');
-be = makeBackend(tabs(), props, () => 503);
+assert.deepStrictEqual(be.calls.map((c) => c.model), ['gemini-3.8-flash', 'gemini-3.7-flash']);
+assert.strictEqual(r.model, 'gemini-3.7-flash');
+be = makeBackend(tabs(), Object.assign({ GEMINI_MODEL: 'gemini-3.8-flash' }, props), (b, m) => (m === 'gemini-3.8-flash' ? 503 : 404));
 r = be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' });
-assert.match(r.error, /very busy.*gemini-flash-latest: 503, gemini-flash-latest: 503, gemini-2.5-flash: 503/);
+assert.match(r.error, /very busy.*gemini-3.8-flash: 503, gemini-3.7-flash: 404, gemini-3.5-flash: 404/);
 assert.strictEqual(be.calls.length, 3);
-// Quota error: no same-model retry, one fallback, then a one-minute cool-down
+// Quota error on every model: then a one-minute cool-down
 be = makeBackend(tabs(), props, () => 429);
 r = be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' });
 assert.match(r.error, /limit was reached/);
-assert.strictEqual(be.calls.length, 2);
+assert.strictEqual(be.calls.length, 3);
 assert.match(be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' }).error, /short breather/);
-assert.strictEqual(be.calls.length, 2);
+assert.strictEqual(be.calls.length, 3);
 be = makeBackend(tabs(), props, () => 400);
 assert.match(be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' }).error, /could not be reached/);
 
