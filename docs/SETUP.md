@@ -4,7 +4,7 @@ Each stage adds a section here. Do them in order.
 
 ## Stage 1: Tidy the Sheet and add Nick's tab
 
-What this does: renames your existing tab to **Sophie**, tidies every row, keeps an untouched backup, adds an empty **Nick** tab, a hidden **Meta** tab (remembers when each of you last chatted with the librarian), and a **Setup report** tab listing every change.
+What this does: renames your existing tab to **Sophie (original backup)** and leaves it untouched, builds a new tidied **Sophie** tab from it, adds an empty **Nick** tab, a hidden **Meta** tab (remembers when each of you last chatted with the librarian), and a **Setup report** tab listing every change.
 
 New columns are added on the right: **Added**, **Updated** (so the librarian can spot books added since your last chat) and **Needs attention** (e.g. "Missing rating").
 
@@ -20,7 +20,7 @@ New columns are added on the right: **Added**, **Updated** (so the librarian can
 8. Go back to the Sheet. You should see a toast saying *Setup complete*, and tabs **Sophie**, **Nick**, **Sophie (original backup)** and **Setup report**.
 9. Open **Setup report** and look at the *Needs attention* list at the bottom. Fill in any missing ratings directly in the **Sophie** tab, then clear that row's *Needs attention* cell.
 
-If setup stops partway with an error, just run it again: it carries on from the untouched backup. To start completely afresh, delete the Sophie, Nick, Meta and Setup report tabs, rename the backup to `Sheet1` and run it again.
+If setup stops partway with an error, just run it again: it carries on from the untouched backup. Any half-built Sophie tab from a failed run is renamed "...(failed setup, safe to delete)" rather than deleted.
 
 Once you're happy you can delete **Setup report** (and later, the backup).
 

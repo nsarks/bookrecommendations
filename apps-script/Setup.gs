@@ -1,9 +1,8 @@
 /**
  * ONE-OFF SETUP. Run setupLibrary() from the Apps Script editor.
  * It:
- *  1. Copies your original tab to "Sophie (original backup)" so nothing is lost.
- *  2. Renames the original tab to "Sophie" and tidies every row (always working
- *     from the untouched backup, so running it again is safe).
+ *  1. Renames your original tab to "Sophie (original backup)" and never changes it.
+ *  2. Builds a new, tidied "Sophie" tab from it (so running it again is safe).
  *  3. Creates an empty "Nick" tab with the same headers.
  *  4. Writes a "Setup report" tab listing every change and anything to check.
  *  5. Creates a hidden "Meta" tab (last chat times). This is done last and
@@ -17,16 +16,16 @@ function setupLibrary() {
     throw new Error('Setup has already finished (a "Meta" tab exists). Nothing was changed.');
   }
 
-  // 1. Backup and rename (skipped if a previous run already did it).
+  // 1. The original tab becomes the backup and is never written to.
+  //    (It may be a Sheets "Table", which refuses many script edits.)
   var backup = ss.getSheetByName(BACKUP_NAME);
-  var sophie = ss.getSheetByName('Sophie');
   if (!backup) {
-    var original = ss.getSheetByName('Sheet1') || ss.getSheets()[0];
-    backup = original.copyTo(ss).setName(BACKUP_NAME);
-    original.setName('Sophie');
-    sophie = original;
+    backup = (ss.getSheetByName('Sheet1') || ss.getSheets()[0]).setName(BACKUP_NAME);
   }
-  if (!sophie) sophie = ss.insertSheet('Sophie');
+  // A "Sophie" tab left by an earlier failed run is set aside, not deleted.
+  var old = ss.getSheetByName('Sophie');
+  if (old) old.setName('Sophie (failed setup ' + new Date().getTime() + ', safe to delete)');
+  var sophie = ss.insertSheet('Sophie', 0);
 
   // 2. Clean from the backup and write to Sophie.
   var raw = backup.getDataRange().getValues().slice(1)
@@ -36,7 +35,6 @@ function setupLibrary() {
   var out = [HEADERS].concat(result.books.map(function (b) {
     return [b.title, b.author, b.rating, b.commentary, b.status, now, now, b.flags.join('; ')];
   }));
-  sophie.clearContents();
   sophie.getRange(1, 1, out.length, HEADERS.length).setValues(out);
   formatBookTab_(sophie);
 
