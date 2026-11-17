@@ -74,10 +74,9 @@ Do Stage 2 first. You need the backend's `/exec` address and your passcode.
 ### 3a. Turn on GitHub Pages
 1. On GitHub, open the repository → **Settings → Pages** (left sidebar).
 2. Under **Build and deployment → Source**, choose **Deploy from a branch**.
-3. Branch: **`claude/reading-library-pwa-di19cb`**, folder **`/ (root)`** → **Save**.
+3. Branch: **`main`**, folder **`/ (root)`** → **Save**.
 4. Wait a minute or two and refresh. The page shows **"Your site is live at https://nsarks.github.io/bookrecommendations/"**.
 
-(Later, once we merge into `main`, we'll switch this to `main`.)
 
 ### 3b. Try it on your phone
 1. Open **https://nsarks.github.io/bookrecommendations/** in Chrome.
