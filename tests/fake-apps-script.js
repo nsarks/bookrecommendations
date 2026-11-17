@@ -36,7 +36,7 @@ function makeBackend(tabs, props, gemini) {
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     SpreadsheetApp: { getActiveSpreadsheet: () => ({ getSheetByName: (n) => sheets[n] }) },
     ContentService: {}, Logger: { log() {} },
-    Utilities: { formatDate: (d) => d.toDateString() },
+    Utilities: { formatDate: (d) => d.toDateString(), sleep() {} },
     UrlFetchApp: {
       fetch: (url, opts) => {
         const model = (url.match(/models\/([^:]+):/) || [])[1];

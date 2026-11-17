@@ -31,7 +31,8 @@ assert.ok(r.ok, r.error);
 assert.strictEqual(r.reply.recommendations.length, 3);
 const body = be.calls[0].body;
 const sys = body.systemInstruction.parts[0].text, msg = body.contents[0].parts[0].text;
-assert.strictEqual(be.calls[0].model, 'gemini-2.5-flash');
+assert.strictEqual(be.calls[0].model, 'gemini-flash-latest');
+assert.strictEqual(r.model, 'gemini-flash-latest');
 assert.match(sys, /Sophie's personal librarian/);
 assert.match(sys, /British English/);
 assert.match(msg, /Steer: something gothic/);
@@ -72,7 +73,19 @@ be = makeBackend(tabs(), { PASSCODE: 'p' }, () => reply([]));
 assert.match(be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' }).error, /GEMINI_API_KEY/);
 assert.match(be.handle({ passcode: 'x', action: 'recommend', user: 'Sophie' }).error, /Wrong passcode/);
 
-// 5. Model can be changed in Script Properties
+// 5. Busy model: retried once, then falls back to the next model
+be = makeBackend(tabs(), Object.assign({ GEMINI_MODEL: 'gemini-3.8-flash' }, props),
+  (body, model) => (model === 'gemini-3.8-flash' ? 503 : reply([rec('My Cousin Rachel')])));
+r = be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' });
+assert.ok(r.ok, r.error);
+assert.deepStrictEqual(be.calls.map((c) => c.model), ['gemini-3.8-flash', 'gemini-3.8-flash', 'gemini-flash-latest']);
+assert.strictEqual(r.model, 'gemini-flash-latest');
+be = makeBackend(tabs(), props, () => 503);
+assert.match(be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' }).error, /very busy/);
+be = makeBackend(tabs(), props, () => 400);
+assert.match(be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' }).error, /could not be reached/);
+
+// 6. Model can be changed in Script Properties
 be = makeBackend(tabs(), Object.assign({ GEMINI_MODEL: 'gemini-3-flash' }, props), () => reply([rec('A')]));
 be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' });
 assert.strictEqual(be.calls[0].model, 'gemini-3-flash');

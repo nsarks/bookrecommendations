@@ -106,8 +106,8 @@ You should already have `GEMINI_API_KEY` in Script Properties (free tier, no bil
 
 ### 6b. Check the key and pick a model
 1. Open `Librarian`, choose **testGemini** in the function dropdown, **Run**. Approve the new permission ("connect to an external service": that's the call to Gemini).
-2. The **Execution log** shows the Flash models your key can use, the one currently in use, and a one-line test reply.
-3. The app uses `gemini-2.5-flash` by default. If that isn't in the list, or you'd like a newer Flash model from the list, add a Script Property `GEMINI_MODEL` with that exact name.
+2. The **Execution log** shows the Flash models your key can use, the order the librarian will try them in, and a one-line test reply saying which model answered.
+3. To prefer a particular model, add a Script Property `GEMINI_MODEL` with its exact name from that list (e.g. `gemini-3.8-flash`). If it's busy or out of free quota, the librarian automatically falls back to `gemini-flash-latest`, then `gemini-3.5-flash`, then `gemini-2.5-flash`.
 
 ### 6c. Redeploy
 **Deploy → Manage deployments → ✏️ → Version: New version → Deploy.** Same address as before.

@@ -4,9 +4,13 @@
  *
  * Script Properties:
  *   GEMINI_API_KEY  (required)  from aistudio.google.com
- *   GEMINI_MODEL    (optional)  defaults to DEFAULT_MODEL below; run testGemini() to see what's available
+ *   GEMINI_MODEL    (optional)  your preferred model; run testGemini() to see what's available.
+ *                               If it's busy, FALLBACK_MODELS are tried in turn.
  */
-var DEFAULT_MODEL = 'gemini-2.5-flash';
+var DEFAULT_MODEL = 'gemini-flash-latest';
+// Tried in order if your chosen model is busy, out of free quota or missing.
+var FALLBACK_MODELS = ['gemini-flash-latest', 'gemini-3.5-flash', 'gemini-2.5-flash'];
+var lastModelUsed = null;
 var GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/';
 
 function recommend_(user, steer) {
@@ -52,7 +56,8 @@ function recommend_(user, steer) {
       recommendations: reply.recommendations,
       closing: reply.closing || ''
     },
-    authorsFilled: (reply.missingAuthors || []).length
+    authorsFilled: (reply.missingAuthors || []).length,
+    model: lastModelUsed
   };
 }
 
@@ -156,28 +161,56 @@ function geminiKey_() {
   return key;
 }
 
+/**
+ * Tries your chosen model first, then the fallbacks. Busy (503/500) gets one
+ * retry after a pause; a model that is busy, out of free quota or missing is
+ * skipped in favour of the next one.
+ */
+function geminiModels_() {
+  var chosen = PropertiesService.getScriptProperties().getProperty('GEMINI_MODEL') || DEFAULT_MODEL;
+  var list = [chosen].concat(FALLBACK_MODELS);
+  return list.filter(function (m, i) { return list.indexOf(m) === i; });
+}
+
 function callGemini_(system, message, schema) {
-  var model = PropertiesService.getScriptProperties().getProperty('GEMINI_MODEL') || DEFAULT_MODEL;
-  var res = UrlFetchApp.fetch(GEMINI_BASE + 'models/' + model + ':generateContent', {
-    method: 'post',
-    contentType: 'application/json',
-    headers: { 'x-goog-api-key': geminiKey_() },
-    muteHttpExceptions: true,
-    payload: JSON.stringify({
-      systemInstruction: { parts: [{ text: system }] },
-      contents: [{ role: 'user', parts: [{ text: message }] }],
-      generationConfig: { responseMimeType: 'application/json', responseSchema: schema, temperature: 1 }
-    })
+  var payload = JSON.stringify({
+    systemInstruction: { parts: [{ text: system }] },
+    contents: [{ role: 'user', parts: [{ text: message }] }],
+    generationConfig: { responseMimeType: 'application/json', responseSchema: schema, temperature: 1 }
   });
-  var code = res.getResponseCode();
-  if (code === 429) throw new Error('The librarian is a little busy (free daily or per-minute limit reached). Please try again in a minute or two.');
-  if (code === 404) throw new Error('Model "' + model + '" was not found. Run testGemini() in Apps Script to see which models you can use.');
-  if (code !== 200) throw new Error('The librarian could not be reached (error ' + code + ').');
-  var data = JSON.parse(res.getContentText());
-  var parts = (((data.candidates || [])[0] || {}).content || {}).parts || [];
-  var text = parts.filter(function (p) { return !p.thought && p.text; }).map(function (p) { return p.text; }).join('');
-  if (!text) throw new Error('The librarian was lost for words. Please try again.');
-  return JSON.parse(text);
+  var codes = [];
+  var models = geminiModels_();
+  for (var m = 0; m < models.length; m++) {
+    for (var attempt = 0; attempt < 2; attempt++) {
+      var res = UrlFetchApp.fetch(GEMINI_BASE + 'models/' + models[m] + ':generateContent', {
+        method: 'post',
+        contentType: 'application/json',
+        headers: { 'x-goog-api-key': geminiKey_() },
+        muteHttpExceptions: true,
+        payload: payload
+      });
+      var code = res.getResponseCode();
+      if (code === 200) {
+        lastModelUsed = models[m];
+        var data = JSON.parse(res.getContentText());
+        var parts = (((data.candidates || [])[0] || {}).content || {}).parts || [];
+        var text = parts.filter(function (p) { return !p.thought && p.text; }).map(function (p) { return p.text; }).join('');
+        if (!text) throw new Error('The librarian was lost for words. Please try again.');
+        return JSON.parse(text);
+      }
+      codes.push(models[m] + ': ' + code);
+      Logger.log('Gemini ' + models[m] + ' returned ' + code + ': ' + res.getContentText().slice(0, 200));
+      if ((code === 503 || code === 500) && attempt === 0) { Utilities.sleep(2000); continue; }
+      break;   // 429 (quota), 404 (not found) or still busy: try the next model
+    }
+  }
+  if (codes.every(function (c) { return / 429$/.test(c); })) {
+    throw new Error('The librarian is a little busy (free daily or per-minute limit reached). Please try again in a minute or two.');
+  }
+  if (codes.some(function (c) { return / (503|500|429)$/.test(c); })) {
+    throw new Error('Google’s servers are very busy just now. Please try again in a minute or two.');
+  }
+  throw new Error('The librarian could not be reached (' + codes.join(', ') + '). Run testGemini() in Apps Script for details.');
 }
 
 // ---------- memory: last chat time and missing authors ----------
@@ -234,11 +267,10 @@ function testGemini() {
     .filter(function (m) { return /flash/.test(m.name) && (m.supportedGenerationMethods || []).indexOf('generateContent') !== -1; })
     .map(function (m) { return m.name.replace('models/', ''); });
   Logger.log('Flash models your key can use:\n' + models.join('\n'));
-  var model = PropertiesService.getScriptProperties().getProperty('GEMINI_MODEL') || DEFAULT_MODEL;
-  Logger.log('Currently using: ' + model);
+  Logger.log('Will try, in order: ' + geminiModels_().join(', '));
   var out = callGemini_('Reply in British English.', 'Say hello to a book lover in one short sentence.',
     { type: 'OBJECT', properties: { hello: { type: 'STRING' } }, required: ['hello'] });
-  Logger.log('Test reply: ' + out.hello);
+  Logger.log('Test reply from ' + lastModelUsed + ': ' + out.hello);
 }
 
 /** Try a real recommendation from the editor without the app (does update the last-chat time). */
