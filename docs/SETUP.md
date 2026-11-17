@@ -123,17 +123,15 @@ On your phone, pull down to refresh, open **Recommend**, optionally type a steer
 
 **Optional:** `testRecommend` in the `Librarian` file runs a full recommendation for Sophie and logs it. Note that it counts as a chat (it updates the last-chat time).
 
-### 6e. Mistral as the main librarian (free, no card, European)
-Gemini's free Flash models were overloaded for us, so the librarian now asks **Mistral** first and uses Gemini as the backup.
-1. Go to **console.mistral.ai** and sign up (Google sign-in works). Choose the free plan (may be called **Experiment**). It may ask for phone verification. If it asks for a card, stop.
-2. If there's a setting about using your data to train models, turn it off.
-3. **API Keys → Create new key**, name it `reading-library`, copy it.
-4. Apps Script → ⚙️ **Project Settings → Script Properties**: add `MISTRAL_API_KEY` = your key. Save.
-5. Paste the latest [`apps-script/Librarian.gs`](../apps-script/Librarian.gs) over your `Librarian` file and save.
-6. Run **testMistral**. The log lists the Mistral models you can use, the order they'll be tried (`mistral-large-latest`, then `mistral-medium-latest`), and a test hello.
-7. Redeploy: **Deploy → Manage deployments → select it → ✏️ → New version → Deploy.**
+### 6e. Groq as the main librarian (free, no card)
+Gemini's free Flash models were overloaded for us, and Mistral's API now needs a paid plan, so the librarian asks **Groq** first and uses Gemini as the backup. (Groq, with a q, runs open models such as OpenAI's gpt-oss and Meta's Llama. It is not Musk's Grok.)
+1. Go to **console.groq.com** and sign in (e.g. with Google). If it asks for a card, stop.
+2. **API Keys → Create API Key**, name it `reading-library`, copy it (it's only shown once).
+3. Apps Script → ⚙️ **Project Settings → Script Properties**: add `GROQ_API_KEY` = your key. Save.
+4. Paste the latest [`apps-script/Librarian.gs`](../apps-script/Librarian.gs) over your `Librarian` file and save.
+5. Run **testGroq**. The log lists the Groq models you can use, the order they'll be tried (`openai/gpt-oss-120b`, then `llama-3.3-70b-versatile`), and a test hello.
+6. Redeploy: **Deploy → Manage deployments → select it → ✏️ → New version → Deploy.**
 
 Optional settings (Script Properties):
-- `MISTRAL_MODEL`: a model from the testMistral list to try first.
-- `LLM_ORDER`: the order to ask services in. Default `mistral,gemini,groq`; services without a key are skipped. For example `gemini,mistral` asks Gemini first.
-- `GROQ_API_KEY` (from console.groq.com): adds Groq as an extra backup; run **testGroq** to check it.
+- `GROQ_MODEL`: a model from the testGroq list to try first.
+- `LLM_ORDER`: the order to ask services in. Default `mistral,groq,gemini`; services without a key are skipped. `MISTRAL_API_KEY` is supported if you ever get one (run **testMistral**).

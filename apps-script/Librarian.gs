@@ -3,12 +3,12 @@
  * model for recommendations. Free tiers only: no billing is ever linked.
  *
  * Script Properties (at least one key is needed):
- *   MISTRAL_API_KEY from console.mistral.ai  (asked first)
+ *   MISTRAL_API_KEY from console.mistral.ai  (if you have one)
  *   GEMINI_API_KEY  from aistudio.google.com (backup)
- *   GROQ_API_KEY    from console.groq.com    (optional extra backup)
+ *   GROQ_API_KEY    from console.groq.com    (free, no card)
  *   MISTRAL_MODEL / GEMINI_MODEL / GROQ_MODEL  optional; run testMistral(),
  *                   testGemini() or testGroq() to see what's available
- *   LLM_ORDER       optional; default "mistral,gemini,groq" (services without a key are skipped)
+ *   LLM_ORDER       optional; default "mistral,groq,gemini" (services without a key are skipped)
  * At most 3 requests are made per question.
  */
 var DEFAULT_MODEL = 'gemini-flash-latest';
@@ -162,7 +162,7 @@ function librarianSchema_() {
   };
 }
 
-// ---------- language models (Mistral first, then Gemini, then Groq) ----------
+// ---------- language models (Mistral, then Groq, then Gemini: whichever have keys) ----------
 
 // Services that use the common "chat completions" request style.
 // Models are listed best first; a missing one is skipped instantly.
@@ -183,7 +183,7 @@ function geminiKey_() {
 
 /** Which services to ask, in order. LLM_ORDER (e.g. "gemini,groq") overrides. */
 function providers_() {
-  var order = (prop_('LLM_ORDER') || 'mistral,gemini,groq').split(',').map(function (x) { return x.trim().toLowerCase(); });
+  var order = (prop_('LLM_ORDER') || 'mistral,groq,gemini').split(',').map(function (x) { return x.trim().toLowerCase(); });
   var keys = { mistral: prop_('MISTRAL_API_KEY'), gemini: prop_('GEMINI_API_KEY'), groq: prop_('GROQ_API_KEY') };
   order = order.filter(function (p) { return keys[p]; });
   if (!order.length) throw new Error('No MISTRAL_API_KEY or GEMINI_API_KEY set in Script Properties.');

@@ -122,10 +122,10 @@ assert.strictEqual(r.model, 'mistral/mistral-medium-latest');
 // Everything busy, all three services configured: still at most 3 requests
 be = makeBackend(tabs(), Object.assign({ GROQ_API_KEY: 'g' }, mg), () => 503, () => 503, () => 503);
 r = be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' });
-assert.match(r.error, /very busy.*mistral\/mistral-large-latest: 503, gemini-flash-latest: 503, gemini-3.7-flash: 503/);
+assert.match(r.error, /very busy.*mistral\/mistral-large-latest: 503, groq\/openai\/gpt-oss-120b: 503, gemini-flash-latest: 503/);
 assert.strictEqual(be.calls.length, 3);
-// Groq via LLM_ORDER, with gpt-oss reasoning turned down
-be = makeBackend(tabs(), Object.assign({ GROQ_API_KEY: 'g', LLM_ORDER: 'groq,gemini' }, props), () => 500, () => reply([rec('From Groq')]));
+// Groq + Gemini keys only: Groq goes first by default, with gpt-oss reasoning turned down
+be = makeBackend(tabs(), Object.assign({ GROQ_API_KEY: 'g' }, props), () => 500, () => reply([rec('From Groq')]));
 r = be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' });
 assert.strictEqual(r.model, 'groq/openai/gpt-oss-120b');
 assert.strictEqual(be.calls[0].body.reasoning_effort, 'low');
