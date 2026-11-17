@@ -20,7 +20,7 @@ New columns are added on the right: **Added**, **Updated** (so the librarian can
 8. Go back to the Sheet. You should see a toast saying *Setup complete*, and tabs **Sophie**, **Nick**, **Sophie (original backup)** and **Setup report**.
 9. Open **Setup report** and look at the *Needs attention* list at the bottom. Fill in any missing ratings directly in the **Sophie** tab, then clear that row's *Needs attention* cell.
 
-If something looks wrong you can delete the Sophie, Nick, Meta and Setup report tabs, rename the backup to `Sheet1` and run it again.
+If setup stops partway with an error, just run it again: it carries on from the untouched backup. To start completely afresh, delete the Sophie, Nick, Meta and Setup report tabs, rename the backup to `Sheet1` and run it again.
 
 Once you're happy you can delete **Setup report** (and later, the backup).
 
