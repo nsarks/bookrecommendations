@@ -173,3 +173,33 @@ textarea { resize: vertical; min-height: 110px; }
 .danger.solid { background: var(--stopped); color: #fff; border: 0; }
 .seg button:disabled { opacity: .45; }
 .unknown { font-style: italic; }
+
+/* Recommend */
+#rec-form textarea { min-height: 72px; }
+#view-recommend > * + * { margin-top: 14px; }
+.thinking { text-align: center; }
+.thinking p { font-family: var(--serif); font-size: 1.1rem; margin: 10px 0 0; }
+.books-anim { display: flex; justify-content: center; align-items: flex-end; gap: 5px; height: 48px; }
+.books-anim span { width: 14px; border-radius: 3px 3px 1px 1px; background: var(--spine); animation: tilt 1.4s ease-in-out infinite; transform-origin: bottom left; }
+.books-anim span:nth-child(1) { height: 40px; }
+.books-anim span:nth-child(2) { height: 46px; background: var(--green); animation-delay: .2s; }
+.books-anim span:nth-child(3) { height: 36px; background: var(--gold); animation-delay: .4s; }
+@keyframes tilt { 0%, 60%, 100% { transform: rotate(0); } 30% { transform: rotate(-14deg); } }
+@media (prefers-reduced-motion: reduce) { .books-anim span { animation: none; } }
+
+.reply { display: grid; gap: 12px; }
+.reply .say { font-family: var(--serif); font-size: 1.08rem; line-height: 1.55; margin: 0; }
+.reply .say.card { padding: 16px 18px; }
+.rec { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; border-top: 5px solid var(--green); }
+.rec.Wildcard { border-top-color: var(--gold); }
+.rec .kind { font-size: .78rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--green); }
+.rec.Wildcard .kind { color: #8a5a12; }
+.rec h3 { font-size: 1.25rem; margin: 4px 0 0; }
+.rec .by { color: var(--muted); margin: 0 0 8px; }
+.rec p { margin: 0 0 12px; }
+.rec button { min-height: 48px; width: 100%; border-radius: 12px; border: 1px solid var(--green); background: #fff; color: var(--green); font-weight: 600; }
+.rec button.done { background: var(--green); color: #fff; }
+.rec button:disabled:not(.done) { opacity: .6; }
+.rec .err { color: var(--stopped); font-size: .9rem; margin: 8px 0 0; }
+.asked { font-size: .85rem; color: var(--muted); text-align: right; margin: 0; }
+.reply .say + .say { margin-top: 10px; }

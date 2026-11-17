@@ -38,11 +38,17 @@ async function api(action, payload = {}) {
       body: JSON.stringify({ ...payload, action, passcode: S.cfg.passcode })
     });
   } catch (e) {
-    throw new Error('Could not reach the library. Check your internet connection.');
+    const err = new Error('Could not reach the library. Check your internet connection.');
+    err.code = 'network';
+    throw err;
   }
   let data;
   try { data = await res.json(); } catch (e) { throw new Error('The library sent back something unexpected.'); }
-  if (!data.ok) throw new Error(data.error || 'Something went wrong.');
+  if (!data.ok) {
+    const err = new Error(data.error || 'Something went wrong.');
+    err.code = data.code;
+    throw err;
+  }
   return data;
 }
 
@@ -77,6 +83,7 @@ function showApp() {
   $('who').hidden = false;
   $('tabs').hidden = false;
   goTab(S.tab);
+  showSavedReply();
   loadBooks();
 }
 
@@ -122,6 +129,7 @@ function sortedBooks() {
 
 function renderBooks() {
   refreshSuggestions();
+  refreshRecButtons();
   const q = normKey(S.q);
   const list = sortedBooks().filter((b) =>
     (S.filter === 'All' || b.status === S.filter) &&
@@ -398,6 +406,118 @@ function toast(text) {
   toastTimer = setTimeout(() => { t.hidden = true; }, 2600);
 }
 
+// ---------- recommend ----------
+const R = { busy: false, timer: null, recs: [] };
+const THINKING = ['Browsing the shelves…', 'Having a look at what you’ve been reading…',
+  'Pulling a few favourites off the shelf…', 'Weighing up a wildcard…', 'Nearly there, just wrapping them up…'];
+
+async function askLibrarian(e) {
+  e.preventDefault();
+  if (R.busy) return;
+  const steer = $('rec-steer').value.trim();
+  R.busy = true;
+  $('rec-btn').disabled = true;
+  $('rec-error').hidden = true;
+  $('rec-reply').hidden = true;
+  $('rec-loading').hidden = false;
+  let i = 0;
+  $('rec-loading-text').textContent = THINKING[0];
+  R.timer = setInterval(() => { i = Math.min(i + 1, THINKING.length - 1); $('rec-loading-text').textContent = THINKING[i]; }, 3000);
+  const userAtStart = S.user;
+  try {
+    const data = await api('recommend', { user: S.user, steer });
+    if (S.user !== userAtStart) return;
+    const saved = { reply: data.reply, steer, at: new Date().toISOString() };
+    store.set('rl.reply.' + S.user, saved);
+    renderReply(saved);
+    $('rec-reply').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (data.authorsFilled) loadBooks();     // pick up authors the librarian filled in
+  } catch (err) {
+    if (S.user !== userAtStart) return;
+    showRecError(err);
+  } finally {
+    clearInterval(R.timer);
+    R.busy = false;
+    $('rec-btn').disabled = false;
+    $('rec-loading').hidden = true;
+  }
+}
+
+function showRecError(err) {
+  let html;
+  if (err.code === 'library' || err.code === 'network') {
+    html = `<p>${esc(sorry(S.user))}</p>`;      // never guess tastes without the library
+  } else if (err.code === 'empty') {
+    html = `<p>I’d love to help, ${esc(S.user)}! Add a few books you’ve read, with scores, so I can get to know your taste first.</p>`;
+  } else {
+    html = `<p>The librarian’s having a little moment, ${esc(S.user)}. ${esc(err.message)}</p>`;
+  }
+  $('rec-error').innerHTML = html + `<button type="button" class="primary" id="rec-retry">Try again</button>`;
+  $('rec-error').hidden = false;
+  $('rec-retry').onclick = () => $('rec-form').requestSubmit();
+}
+
+function renderReply(saved) {
+  const r = saved.reply;
+  R.recs = r.recommendations || [];
+  const intro = [r.greeting, r.newBooksComment].filter(Boolean).map((t) => `<p class="say">${esc(t)}</p>`).join('');
+  $('rec-reply').innerHTML =
+    (intro ? `<div class="card">${intro}</div>` : '') +
+    R.recs.map((x, i) => `
+      <div class="rec ${x.type === 'Wildcard' ? 'Wildcard' : 'Safe'}">
+        <span class="kind">${esc(x.type)}</span>
+        <h3>${esc(x.title)}</h3>
+        <p class="by">${esc(x.author)}</p>
+        <p>${esc(x.pitch)}</p>
+        <button type="button" data-i="${i}">Add to TBR</button>
+        <p class="err" hidden></p>
+      </div>`).join('') +
+    (r.closing ? `<div class="card"><p class="say">${esc(r.closing)}</p></div>` : '') +
+    `<p class="asked">Asked ${esc(fmtDate(saved.at))}${saved.steer ? ' · “' + esc(saved.steer) + '”' : ''}</p>`;
+  $('rec-reply').hidden = false;
+  refreshRecButtons();
+}
+
+function refreshRecButtons() {
+  document.querySelectorAll('#rec-reply .rec button').forEach((b) => {
+    const rec = R.recs[Number(b.dataset.i)];
+    if (rec && S.books.some((x) => normKey(x.title) === normKey(rec.title))) {
+      b.textContent = 'On your shelf ✓';
+      b.classList.add('done');
+      b.disabled = true;
+    }
+  });
+}
+
+function showSavedReply() {
+  clearInterval(R.timer);
+  $('rec-loading').hidden = true;
+  $('rec-error').hidden = true;
+  const saved = store.get('rl.reply.' + S.user);
+  if (saved && saved.reply) renderReply(saved); else { R.recs = []; $('rec-reply').hidden = true; }
+}
+
+async function addRecToTbr(btn) {
+  const rec = R.recs[Number(btn.dataset.i)];
+  const errEl = btn.nextElementSibling;
+  if (!rec || btn.disabled) return;
+  if (S.books.some((x) => normKey(x.title) === normKey(rec.title))) return refreshRecButtons();
+  btn.disabled = true; btn.textContent = 'Adding…'; errEl.hidden = true;
+  try {
+    const res = await api('upsert', { user: S.user, book: { title: rec.title, author: rec.author, status: 'TBR' } });
+    S.books.push(res.book);
+    store.set('rl.books.' + S.user, S.books);
+    renderBooks();
+    btn.textContent = 'Added to TBR ✓';
+    btn.classList.add('done');
+    toast('Added to your TBR');
+  } catch (err) {
+    btn.disabled = false; btn.textContent = 'Add to TBR';
+    errEl.textContent = 'Couldn’t add just now – please try again. (' + err.message + ')';
+    errEl.hidden = false;
+  }
+}
+
 // ---------- wiring ----------
 buildScores();
 $('add-form').addEventListener('submit', submitBook);
@@ -484,6 +604,8 @@ $('p-read-save').addEventListener('click', () => {
   saveDetail({ status: 'Read', rating: D.score, commentary: $('p-read-comment').value.trim() }, 'Marked as read');
 });
 $('p-delete-yes').addEventListener('click', deleteDetail);
+$('rec-form').addEventListener('submit', askLibrarian);
+$('rec-reply').addEventListener('click', (e) => { const b = e.target.closest('.rec button'); if (b) addRecToTbr(b); });
 $('detail').addEventListener('click', (e) => { if (e.target === $('detail')) $('detail').close(); });
 
 start();

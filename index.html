@@ -92,9 +92,22 @@
       </form>
     </section>
 
-    <section id="view-recommend" class="view card" hidden>
-      <h2>Ask the librarian</h2>
-      <p class="muted">Coming soon.</p>
+    <section id="view-recommend" class="view" hidden>
+      <form id="rec-form" class="card">
+        <h2>Ask the librarian</h2>
+        <label for="rec-steer">Anything specific in mind? <span class="muted small">(optional)</span></label>
+        <textarea id="rec-steer" rows="2" placeholder="e.g. a non-fiction pick"></textarea>
+        <button type="submit" class="primary" id="rec-btn">Recommend</button>
+      </form>
+
+      <div class="thinking card" id="rec-loading" role="status" hidden>
+        <div class="books-anim" aria-hidden="true"><span></span><span></span><span></span></div>
+        <p id="rec-loading-text">Browsing the shelves…</p>
+      </div>
+
+      <div class="card sorry" id="rec-error" role="alert" hidden></div>
+
+      <article class="reply" id="rec-reply" hidden></article>
     </section>
   </main>
 

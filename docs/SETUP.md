@@ -94,3 +94,31 @@ The phone remembers the address, passcode and chosen person. Use **switch user**
 Nothing to set up for the app itself: GitHub Pages updates on its own a minute or two after each push. If your phone shows an old version, pull down to refresh.
 
 **Backend update (Author is now optional):** paste the latest [`apps-script/Api.gs`](../apps-script/Api.gs) over your `Api` file, save, then **Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy**. The `/exec` address stays the same.
+
+## Stage 6: The librarian (Recommend tab)
+
+You should already have `GEMINI_API_KEY` in Script Properties (free tier, no billing).
+
+### 6a. Update the backend code
+1. In Apps Script, paste the latest [`apps-script/Api.gs`](../apps-script/Api.gs) over your `Api` file.
+2. **+ → Script**, name it `Librarian`, paste in [`apps-script/Librarian.gs`](../apps-script/Librarian.gs). Save.
+   You should now have four files: `Cleaning`, `Setup`, `Api`, `Librarian`.
+
+### 6b. Check the key and pick a model
+1. Open `Librarian`, choose **testGemini** in the function dropdown, **Run**. Approve the new permission ("connect to an external service": that's the call to Gemini).
+2. The **Execution log** shows the Flash models your key can use, the one currently in use, and a one-line test reply.
+3. The app uses `gemini-2.5-flash` by default. If that isn't in the list, or you'd like a newer Flash model from the list, add a Script Property `GEMINI_MODEL` with that exact name.
+
+### 6c. Redeploy
+**Deploy → Manage deployments → ✏️ → Version: New version → Deploy.** Same address as before.
+
+### 6d. Try it
+On your phone, pull down to refresh, open **Recommend**, optionally type a steer, and tap **Recommend**. It usually takes 5–20 seconds.
+- Each recommended book has **Add to TBR**.
+- The last answer is remembered on the phone until you ask again.
+- After each chat the librarian remembers the time, so next time it can comment on books added since.
+- If any of your books have no author, the librarian fills it in and marks the row "Author filled in by the librarian, please check".
+
+**Free-tier limits:** if you see "The librarian is a little busy", you've hit the free per-minute or daily limit. Wait a minute (or until tomorrow) and try again. Nothing is ever charged.
+
+**Optional:** `testRecommend` in the `Librarian` file runs a full recommendation for Sophie and logs it. Note that it counts as a chat (it updates the last-chat time).

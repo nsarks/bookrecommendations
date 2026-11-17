@@ -7,6 +7,8 @@
  *   list    { user }                              -> { books: [...] }
  *   upsert  { user, book, originalTitle? }        -> { book, created }
  *   delete  { user, title }                       -> { deleted: true }
+ *   recommend { user, steer? }                    -> { reply: {greeting, newBooksComment, recommendations, closing} }
+ *                                                    (see Librarian.gs)
  *
  * Books are matched by title, ignoring case, spacing and punctuation (normKey),
  * so the same book can never be added twice.
@@ -32,6 +34,7 @@ function handle_(req) {
   try {
     checkPasscode_(req.passcode);
     if (req.action === 'ping') return { ok: true };
+    if (req.action === 'recommend') return recommend_(req.user, req.steer);
     var sheet = userSheet_(req.user);
     switch (req.action) {
       case 'list': return { ok: true, books: listBooks_(sheet) };
