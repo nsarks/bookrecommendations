@@ -122,3 +122,16 @@ On your phone, pull down to refresh, open **Recommend**, optionally type a steer
 **Free-tier limits:** if you see "The librarian is a little busy", you've hit the free per-minute or daily limit. Wait a minute (or until tomorrow) and try again. Nothing is ever charged.
 
 **Optional:** `testRecommend` in the `Librarian` file runs a full recommendation for Sophie and logs it. Note that it counts as a chat (it updates the last-chat time).
+
+### 6e. Add Groq as the main librarian (free, no card)
+Gemini's free Flash models were overloaded for us, so the librarian now asks **Groq** first and uses Gemini only as a backup.
+1. Go to **console.groq.com** and sign in (e.g. with Google). If it asks for a card or billing, stop: it shouldn't.
+2. **API Keys → Create API Key**, name it `reading-library`, and copy it (it's only shown once).
+3. Apps Script → ⚙️ **Project Settings → Script Properties → Add script property**: `GROQ_API_KEY` = your key. Save.
+4. Paste the latest [`apps-script/Librarian.gs`](../apps-script/Librarian.gs) over your `Librarian` file and save.
+5. Run **testGroq**. The log lists the Groq models you can use, the order they'll be tried, and a test hello.
+6. Redeploy: **Deploy → Manage deployments → select it → ✏️ → New version → Deploy.**
+
+Optional settings (Script Properties):
+- `GROQ_MODEL`: a model from the testGroq list to try first (default `openai/gpt-oss-120b`, then `llama-3.3-70b-versatile`).
+- `LLM_ORDER`: `gemini,groq` to ask Gemini first again once it's less busy.

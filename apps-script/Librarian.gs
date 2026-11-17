@@ -1,14 +1,17 @@
 /**
- * The librarian: builds a prompt from the user's library and asks Gemini for
- * three recommendations. Uses the free tier only (no billing is ever linked).
+ * The librarian: builds a prompt from the user's library and asks a language
+ * model for recommendations. Free tiers only: no billing is ever linked.
  *
- * Script Properties:
- *   GEMINI_API_KEY  (required)  from aistudio.google.com
- *   GEMINI_MODEL    (optional)  your preferred model; run testGemini() to see what's available.
- *                               If it fails, FALLBACK_MODELS are tried (3 requests at most).
+ * Script Properties (at least one key is needed):
+ *   GROQ_API_KEY    from console.groq.com   (tried first)
+ *   GEMINI_API_KEY  from aistudio.google.com (backup)
+ *   GROQ_MODEL      optional; run testGroq() to see what's available
+ *   GEMINI_MODEL    optional; run testGemini() to see what's available
+ *   LLM_ORDER       optional; e.g. "gemini,groq" to ask Gemini first
+ * At most 3 requests are made per question.
  */
 var DEFAULT_MODEL = 'gemini-flash-latest';
-// If your chosen model is busy, out of quota or unavailable, these are tried in turn (3 requests at most).
+// Gemini models tried after your chosen GEMINI_MODEL if it is busy or unavailable.
 var FALLBACK_MODELS = ['gemini-3.7-flash', 'gemini-3.5-flash', 'gemini-flash-lite-latest'];
 var lastModelUsed = null;
 var GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/';
@@ -34,7 +37,7 @@ function recommend_(user, steer) {
 
   // One request only. Gemini suggests 5 candidates; we show the best 2 Safe Bets
   // and best Wildcard that aren't already in the library.
-  var reply = callGemini_(librarianSystem_(user),
+  var reply = callLLM_(librarianSystem_(user),
     librarianMessage_(user, steer, books, fresh, noAuthor, lastChat), librarianSchema_());
   reply.recommendations = pickThree_(reply.recommendations || [], owned);
 
@@ -158,45 +161,89 @@ function librarianSchema_() {
   };
 }
 
-// ---------- Gemini ----------
+// ---------- language models (Groq first, Gemini as backup) ----------
+
+var GROQ_BASE = 'https://api.groq.com/openai/v1/';
+// Preferred Groq models, best first. A missing one is skipped instantly.
+var GROQ_MODELS = ['openai/gpt-oss-120b', 'llama-3.3-70b-versatile'];
+
+function prop_(k) { return PropertiesService.getScriptProperties().getProperty(k); }
 
 function geminiKey_() {
-  var key = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+  var key = prop_('GEMINI_API_KEY');
   if (!key) throw new Error('No GEMINI_API_KEY set in Script Properties.');
   return key;
 }
 
-/** Your chosen model, then fallbacks: three different models at most. */
+/** Which services to ask, in order. LLM_ORDER (e.g. "gemini,groq") overrides. */
+function providers_() {
+  var order = (prop_('LLM_ORDER') || 'groq,gemini').split(',').map(function (x) { return x.trim(); });
+  var keys = { groq: prop_('GROQ_API_KEY'), gemini: prop_('GEMINI_API_KEY') };
+  order = order.filter(function (p) { return keys[p]; });
+  if (!order.length) throw new Error('No GROQ_API_KEY or GEMINI_API_KEY set in Script Properties.');
+  return order;
+}
+
+/** Your chosen Gemini model, then fallbacks. */
 function geminiModels_() {
-  var chosen = PropertiesService.getScriptProperties().getProperty('GEMINI_MODEL') || DEFAULT_MODEL;
-  return [chosen].concat(FALLBACK_MODELS.filter(function (m) { return m !== chosen; })).slice(0, 3);
+  var chosen = prop_('GEMINI_MODEL') || DEFAULT_MODEL;
+  return [chosen].concat(FALLBACK_MODELS.filter(function (m) { return m !== chosen; }));
+}
+
+function groqModels_() {
+  var chosen = prop_('GROQ_MODEL');
+  var list = (chosen ? [chosen] : []).concat(GROQ_MODELS);
+  return list.filter(function (m, i) { return list.indexOf(m) === i; });
 }
 
 /**
- * At most 3 requests per question, to stay within free-tier limits: one
- * attempt on each of up to three different models. A busy model (503) is
- * usually busy for a while, so we move on rather than retrying it. After a
- * quota error (429) on every model we pause all requests for a minute.
+ * Asks the services in turn and returns the parsed JSON reply.
+ * At most 3 requests in total. A busy (503/500) or rate-limited (429) service
+ * isn't retried; we move on. After 429s everywhere we pause for a minute.
+ * `only` limits it to one service (used by the test functions).
  */
-function callGemini_(system, message, schema) {
+function callLLM_(system, message, schema, only) {
   var cache = CacheService.getScriptCache();
-  if (cache.get('gemini-cooldown')) {
+  if (cache.get('llm-cooldown')) {
     throw new Error('The librarian is taking a short breather after a busy spell. Please try again in a minute.');
   }
+  var order = only ? [only] : providers_();
+  var codes = [];
+  var budget = 3;
+  for (var i = 0; i < order.length && budget > 0; i++) {
+    // With a backup service available, give the first one up to 2 tries and the backup 1.
+    var share = order.length > 1 ? (i === 0 ? 2 : budget) : budget;
+    var res = order[i] === 'groq'
+      ? tryGroq_(system, message, schema, codes, share)
+      : tryGemini_(system, message, schema, codes, share);
+    budget -= res.used;
+    if (res.out) return res.out;
+  }
+  var detail = ' (' + codes.join(', ') + ')';
+  if (codes.length && codes.every(function (c) { return / 429$/.test(c); })) {
+    cache.put('llm-cooldown', '1', 60);
+    throw new Error('The librarian is a little busy: the free per-minute or daily limit was reached. Please try again in a minute or two.' + detail);
+  }
+  if (codes.some(function (c) { return / (503|500|429|timeout)$/.test(c); })) {
+    throw new Error('The librarian’s services are very busy just now. Please try again in a minute or two.' + detail);
+  }
+  throw new Error('The librarian could not be reached' + detail + '.');
+}
+
+/** Kept for testGemini(): Gemini only. */
+function callGemini_(system, message, schema) { return callLLM_(system, message, schema, 'gemini'); }
+
+function tryGemini_(system, message, schema, codes, max) {
   var payload = JSON.stringify({
     systemInstruction: { parts: [{ text: system }] },
     contents: [{ role: 'user', parts: [{ text: message }] }],
     generationConfig: { responseMimeType: 'application/json', responseSchema: schema, temperature: 1 }
   });
-  var codes = [];
-  var models = geminiModels_();
+  var models = geminiModels_().slice(0, max);
   for (var i = 0; i < models.length; i++) {
     var res = UrlFetchApp.fetch(GEMINI_BASE + 'models/' + models[i] + ':generateContent', {
-      method: 'post',
-      contentType: 'application/json',
-      headers: { 'x-goog-api-key': geminiKey_() },
-      muteHttpExceptions: true,
-      payload: payload
+      method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      headers: { 'x-goog-api-key': geminiKey_() }, payload: payload
     });
     var code = res.getResponseCode();
     if (code === 200) {
@@ -205,20 +252,56 @@ function callGemini_(system, message, schema) {
       var parts = (((data.candidates || [])[0] || {}).content || {}).parts || [];
       var text = parts.filter(function (p) { return !p.thought && p.text; }).map(function (p) { return p.text; }).join('');
       if (!text) throw new Error('The librarian was lost for words. Please try again.');
-      return JSON.parse(text);
+      return { out: JSON.parse(text), used: i + 1 };
     }
     codes.push(models[i] + ': ' + code);
     console.log('Gemini ' + models[i] + ' returned ' + code + ': ' + res.getContentText().slice(0, 500));
   }
-  var detail = ' (' + codes.join(', ') + ')';
-  if (codes.every(function (c) { return / 429$/.test(c); })) {
-    cache.put('gemini-cooldown', '1', 60);
-    throw new Error('The librarian is a little busy: the free per-minute or daily limit was reached. Please try again in a minute or two.' + detail);
+  return { out: null, used: models.length };
+}
+
+function tryGroq_(system, message, schema, codes, max) {
+  var models = groqModels_().slice(0, max);
+  var used = 0;
+  for (var i = 0; i < models.length; i++) {
+    var body = {
+      model: models[i],
+      messages: [
+        { role: 'system', content: system + '\n\nReply with ONLY a JSON object of exactly this shape:\n' + JSON.stringify(shapeOf_(schema)) },
+        { role: 'user', content: message }
+      ],
+      response_format: { type: 'json_object' },
+      temperature: 0.9
+    };
+    if (/gpt-oss/.test(models[i])) body.reasoning_effort = 'low';
+    used++;
+    var res = UrlFetchApp.fetch(GROQ_BASE + 'chat/completions', {
+      method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      headers: { Authorization: 'Bearer ' + prop_('GROQ_API_KEY') }, payload: JSON.stringify(body)
+    });
+    var code = res.getResponseCode();
+    if (code === 200) {
+      lastModelUsed = 'groq/' + models[i];
+      var content = ((((JSON.parse(res.getContentText()).choices || [])[0] || {}).message) || {}).content;
+      if (!content) throw new Error('The librarian was lost for words. Please try again.');
+      return { out: JSON.parse(content), used: used };
+    }
+    codes.push('groq/' + models[i] + ': ' + code);
+    console.log('Groq ' + models[i] + ' returned ' + code + ': ' + res.getContentText().slice(0, 500));
+    if (code !== 404 && code !== 400) break;   // busy or rate-limited: don't hammer, move to the backup
   }
-  if (codes.some(function (c) { return / (503|500|429)$/.test(c); })) {
-    throw new Error('Google’s servers are very busy just now. Please try again in a minute or two.' + detail);
+  return { out: null, used: used };
+}
+
+/** Turns the reply schema into an example JSON shape for models without schema support. */
+function shapeOf_(schema) {
+  if (schema.type === 'OBJECT') {
+    var o = {};
+    Object.keys(schema.properties).forEach(function (k) { o[k] = shapeOf_(schema.properties[k]); });
+    return o;
   }
-  throw new Error('The librarian could not be reached' + detail + '. Run diagnoseGemini() in Apps Script for details.');
+  if (schema.type === 'ARRAY') return [shapeOf_(schema.items)];
+  return schema.enum ? schema.enum.join(' | ') : 'text';
 }
 
 // ---------- memory: last chat time and missing authors ----------
@@ -278,6 +361,23 @@ function testGemini() {
   Logger.log('Will try, in order: ' + geminiModels_().join(', '));
   var out = callGemini_('Reply in British English.', 'Say hello to a book lover in one short sentence.',
     { type: 'OBJECT', properties: { hello: { type: 'STRING' } }, required: ['hello'] });
+  Logger.log('Test reply from ' + lastModelUsed + ': ' + out.hello);
+}
+
+/** Run from the editor: lists Groq models your key can use and sends a test hello. */
+function testGroq() {
+  var res = UrlFetchApp.fetch(GROQ_BASE + 'models', {
+    headers: { Authorization: 'Bearer ' + prop_('GROQ_API_KEY') }, muteHttpExceptions: true
+  });
+  if (res.getResponseCode() !== 200) {
+    Logger.log('Key check failed (' + res.getResponseCode() + '): ' + res.getContentText().slice(0, 300));
+    return;
+  }
+  var ids = (JSON.parse(res.getContentText()).data || []).map(function (m) { return m.id; }).sort();
+  Logger.log('Groq models your key can use:\n' + ids.join('\n'));
+  Logger.log('Will try, in order: ' + groqModels_().join(', '));
+  var out = callLLM_('Reply in British English.', 'Say hello to a book lover in one short sentence.',
+    { type: 'OBJECT', properties: { hello: { type: 'STRING' } }, required: ['hello'] }, 'groq');
   Logger.log('Test reply from ' + lastModelUsed + ': ' + out.hello);
 }
 

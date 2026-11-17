@@ -25,8 +25,9 @@ function fakeSheet(name, rows) {
   };
 }
 
-// gemini(requestBody, model) should return the object the librarian would reply with.
-function makeBackend(tabs, props, gemini) {
+// gemini(requestBody, model) and groq(requestBody, model) return the object the
+// librarian would reply with, or a number to simulate an HTTP error.
+function makeBackend(tabs, props, gemini, groq) {
   const sheets = {};
   Object.keys(tabs).forEach((n) => { sheets[n] = fakeSheet(n, tabs[n]); });
   const cache = {};
@@ -39,9 +40,17 @@ function makeBackend(tabs, props, gemini) {
     Utilities: { formatDate: (d) => d.toDateString(), sleep() {} },
     UrlFetchApp: {
       fetch: (url, opts) => {
+        if (url.includes('api.groq.com')) {
+          const gbody = JSON.parse(opts.payload);
+          calls.push({ provider: 'groq', model: gbody.model, body: gbody });
+          const out = groq ? groq(gbody, gbody.model) : 500;
+          if (typeof out === 'number') return { getResponseCode: () => out, getContentText: () => '' };
+          const t = JSON.stringify({ choices: [{ message: { content: JSON.stringify(out) } }] });
+          return { getResponseCode: () => 200, getContentText: () => t };
+        }
         const model = (url.match(/models\/([^:]+):/) || [])[1];
         const body = JSON.parse(opts.payload);
-        calls.push({ model, body });
+        calls.push({ provider: 'gemini', model, body });
         if (!gemini) return { getResponseCode: () => 500, getContentText: () => '' };
         const reply = gemini(body, model);
         if (typeof reply === 'number') return { getResponseCode: () => reply, getContentText: () => '' };
