@@ -289,3 +289,49 @@ function testGemini() {
 function testRecommend() {
   Logger.log(JSON.stringify(recommend_('Sophie', ''), null, 2));
 }
+
+/**
+ * DIAGNOSTIC: run from the editor and paste the log to Claude.
+ * Sends a handful of single requests, 6 seconds apart, and logs Google's exact
+ * answer for each: a tiny hello, then Sophie's real prompt with and without
+ * the strict reply format, and with "thinking" turned down.
+ */
+function diagnoseGemini() {
+  var props = PropertiesService.getScriptProperties();
+  var models = [props.getProperty('GEMINI_MODEL') || DEFAULT_MODEL, 'gemini-2.5-flash'];
+  models = models.filter(function (m, i) { return models.indexOf(m) === i; });
+  var books = listBooks_(userSheet_('Sophie'));
+  var system = librarianSystem_('Sophie');
+  var message = librarianMessage_('Sophie', '', books, [], [], null);
+  Logger.log('Library: ' + books.length + ' books, prompt ' + (system.length + message.length) + ' characters.');
+
+  var tests = [];
+  models.forEach(function (m) {
+    tests.push([m, 'tiny hello', { contents: [{ parts: [{ text: 'Say hello in five words.' }] }] }]);
+    tests.push([m, 'full prompt, strict format', { systemInstruction: { parts: [{ text: system }] },
+      contents: [{ role: 'user', parts: [{ text: message }] }],
+      generationConfig: { responseMimeType: 'application/json', responseSchema: librarianSchema_() } }]);
+    tests.push([m, 'full prompt, plain JSON', { systemInstruction: { parts: [{ text: system }] },
+      contents: [{ role: 'user', parts: [{ text: message + '\n\nReply as JSON with keys greeting, newBooksComment, recommendations (title, author, type, pitch), closing, missingAuthors.' }] }],
+      generationConfig: { responseMimeType: 'application/json' } }]);
+    var thinking = /^gemini-2\.5/.test(m) ? { thinkingBudget: 512 } : { thinkingLevel: 'low' };
+    tests.push([m, 'full prompt, strict format, less thinking', { systemInstruction: { parts: [{ text: system }] },
+      contents: [{ role: 'user', parts: [{ text: message }] }],
+      generationConfig: { responseMimeType: 'application/json', responseSchema: librarianSchema_(), thinkingConfig: thinking } }]);
+  });
+
+  tests.forEach(function (t, i) {
+    if (i) Utilities.sleep(6000);
+    var start = Date.now();
+    var res = UrlFetchApp.fetch(GEMINI_BASE + 'models/' + t[0] + ':generateContent', {
+      method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      headers: { 'x-goog-api-key': geminiKey_() }, payload: JSON.stringify(t[2])
+    });
+    var secs = ((Date.now() - start) / 1000).toFixed(1);
+    var body = res.getContentText();
+    var summary = res.getResponseCode() === 200
+      ? 'OK. Tokens: ' + JSON.stringify((JSON.parse(body).usageMetadata) || {})
+      : body.replace(/\s+/g, ' ').slice(0, 300);
+    Logger.log(t[0] + ' | ' + t[1] + ' | ' + res.getResponseCode() + ' in ' + secs + 's | ' + summary);
+  });
+}
