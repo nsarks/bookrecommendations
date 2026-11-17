@@ -25,3 +25,44 @@ If something looks wrong you can delete the Sophie, Nick, Meta and Setup report 
 Once you're happy you can delete **Setup report** (and later, the backup).
 
 **To fix a misspelt title the script doesn't know about**, just edit it in the Sheet. The list of known fixes is at the top of `Cleaning.gs` (`TITLE_FIXES`, `AUTHOR_FIXES`).
+
+## Stage 2: The backend (Apps Script web app)
+
+The backend is the only thing allowed to touch your Sheet. The app talks to it over the internet, and every request must carry your passcode.
+
+### 2a. Add the code
+1. In the Sheet: **Extensions → Apps Script**.
+2. Click **+** next to *Files* → **Script**, name it `Api`, and paste in [`apps-script/Api.gs`](../apps-script/Api.gs). Save.
+   (You should now have three files: `Cleaning`, `Setup`, `Api`.)
+
+### 2b. Store the passcode (never in the code)
+1. Left sidebar: ⚙️ **Project Settings**.
+2. Scroll to **Script Properties → Add script property**.
+3. Property: `PASSCODE` · Value: your passcode. **Save script properties.**
+   Tip: a short phrase is better than a 4-digit PIN, e.g. `ginger-bookshelf-42`.
+
+### 2c. Check it works (before going online)
+1. Back in the editor (`< >` icon), open `Api`, choose **testBackend** in the function dropdown, click **Run**.
+2. Open **Execution log** at the bottom. You should see:
+   - *Wrong passcode (should fail)* → `"ok":false`
+   - *Sophie list* → a count of about 127
+   - *Add test book* → `"created":true`
+   - *Same title, different spacing* → `"created":false` (proves duplicates are caught)
+   - *Delete test book* → `"deleted":true`
+   
+   Your Nick tab is left empty afterwards.
+
+### 2d. Put it online
+1. Top right: **Deploy → New deployment**.
+2. Click the ⚙️ next to *Select type* → **Web app**.
+3. Description: `v1` · **Execute as: Me** · **Who has access: Anyone**.
+   ("Anyone" is needed so the phones can reach it without signing in to Google. The passcode is what keeps strangers out, and the script runs as you so the Sheet itself stays private.)
+4. **Deploy**, approve permissions if asked, then **copy the Web app URL** (ends in `/exec`).
+5. Paste that URL into a browser tab. You should see `{"ok":true,"app":"Our Reading Library","message":"Backend is running."}`.
+
+Keep the URL somewhere handy (e.g. a note on your phone). It isn't secret like the passcode, but don't post it publicly.
+
+**Whenever the backend code changes later:** **Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy.** This keeps the same URL.
+
+### 2e. Make the repository public (for GitHub Pages)
+On GitHub: the repo → **Settings → General →** scroll to **Danger Zone → Change visibility → Make public.** Nothing personal is stored in the repo: your books live in the Sheet and the passcode lives in Script Properties.
