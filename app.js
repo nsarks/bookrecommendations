@@ -609,3 +609,8 @@ $('rec-reply').addEventListener('click', (e) => { const b = e.target.closest('.r
 $('detail').addEventListener('click', (e) => { if (e.target === $('detail')) $('detail').close(); });
 
 start();
+
+// Install support: lets the app open full screen from the home screen and work without signal.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => { /* still works without it */ }));
+}

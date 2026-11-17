@@ -139,3 +139,24 @@ Optional settings (Script Properties):
 - `MISTRAL_API_KEY` / `GROQ_API_KEY` still work if you ever get them.
 
 Free OpenRouter models have a small daily allowance (plenty for two people) and the list of free models changes from time to time. If the preferred ones disappear, run testOpenRouter and set `OPENROUTER_MODEL` to one from the list.
+
+## Stage 7: Install it on both phones
+
+The app now has its own icon, opens full screen like a normal app, and opens instantly with your last saved list even without signal. (Adding books and asking the librarian still need a connection.)
+
+### On each Android phone (Chrome)
+1. Open **https://nsarks.github.io/bookrecommendations/** in **Chrome** (VPN off is simplest).
+2. If you haven't already on this phone: paste the backend `/exec` address and the passcode, tap **Connect**, and choose your name.
+3. Tap Chrome's **⋮** menu (top right) → **Add to home screen** → **Install** (it may say **Install app**). Chrome sometimes offers an "Install" banner at the bottom instead; that does the same thing.
+4. You'll get an **Our Library** icon on your home screen (a little bookshelf). Drag it wherever you like.
+5. Open it from the icon. It opens full screen, no address bar.
+
+The phone remembers the connection and who's reading. Sophie does this on her phone and picks **Sophie**; Nick on his and picks **Nick**.
+
+### Updates
+When I change the app, it updates itself the next time it's opened with a connection. If something looks out of date, close the app fully (swipe it away from recent apps) and open it again.
+
+### If something goes wrong
+- **"So sorry…trouble reaching your library"**: no connection, or the backend isn't reachable. Try again with signal.
+- **Wrong passcode**: tap ⚙︎ at the top and re-enter it.
+- **To remove the app**: long-press the icon → **Uninstall** (your books are safe in the Sheet).
