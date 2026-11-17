@@ -3,12 +3,12 @@
  * model for recommendations. Free tiers only: no billing is ever linked.
  *
  * Script Properties (at least one key is needed):
- *   MISTRAL_API_KEY from console.mistral.ai  (if you have one)
+ *   OPENROUTER_API_KEY from openrouter.ai (free models, no card)  <- main librarian
  *   GEMINI_API_KEY  from aistudio.google.com (backup)
- *   GROQ_API_KEY    from console.groq.com    (free, no card)
- *   MISTRAL_MODEL / GEMINI_MODEL / GROQ_MODEL  optional; run testMistral(),
- *                   testGemini() or testGroq() to see what's available
- *   LLM_ORDER       optional; default "mistral,groq,gemini" (services without a key are skipped)
+ *   MISTRAL_API_KEY / GROQ_API_KEY  supported if you have them (Groq blocks Apps Script)
+ *   OPENROUTER_MODEL / GEMINI_MODEL / ...  optional; run testOpenRouter() or
+ *                   testGemini() to see what's available
+ *   LLM_ORDER       optional; default "mistral,openrouter,groq,gemini" (services without a key are skipped)
  * At most 3 requests are made per question.
  */
 var DEFAULT_MODEL = 'gemini-flash-latest';
@@ -162,13 +162,17 @@ function librarianSchema_() {
   };
 }
 
-// ---------- language models (Mistral, then Groq, then Gemini: whichever have keys) ----------
+// ---------- language models (whichever have keys, in LLM_ORDER) ----------
 
 // Services that use the common "chat completions" request style.
 // Models are listed best first; a missing one is skipped instantly.
 var CHAT_SERVICES = {
   mistral: { label: 'Mistral', base: 'https://api.mistral.ai/v1/', key: 'MISTRAL_API_KEY', modelProp: 'MISTRAL_MODEL',
     models: ['mistral-large-latest', 'mistral-medium-latest'] },
+  openrouter: { label: 'OpenRouter', base: 'https://openrouter.ai/api/v1/', key: 'OPENROUTER_API_KEY', modelProp: 'OPENROUTER_MODEL',
+    // Free models only (":free"). Run testOpenRouter() to see which are currently offered.
+    models: ['mistralai/mistral-small-3.2-24b-instruct:free', 'meta-llama/llama-3.3-70b-instruct:free'],
+    loose: true, headers: { 'X-Title': 'Our Reading Library' } },
   groq: { label: 'Groq', base: 'https://api.groq.com/openai/v1/', key: 'GROQ_API_KEY', modelProp: 'GROQ_MODEL',
     models: ['openai/gpt-oss-120b', 'llama-3.3-70b-versatile'] }
 };
@@ -183,10 +187,10 @@ function geminiKey_() {
 
 /** Which services to ask, in order. LLM_ORDER (e.g. "gemini,groq") overrides. */
 function providers_() {
-  var order = (prop_('LLM_ORDER') || 'mistral,groq,gemini').split(',').map(function (x) { return x.trim().toLowerCase(); });
-  var keys = { mistral: prop_('MISTRAL_API_KEY'), gemini: prop_('GEMINI_API_KEY'), groq: prop_('GROQ_API_KEY') };
+  var order = (prop_('LLM_ORDER') || 'mistral,openrouter,groq,gemini').split(',').map(function (x) { return x.trim().toLowerCase(); });
+  var keys = { mistral: prop_('MISTRAL_API_KEY'), openrouter: prop_('OPENROUTER_API_KEY'), gemini: prop_('GEMINI_API_KEY'), groq: prop_('GROQ_API_KEY') };
   order = order.filter(function (p) { return keys[p]; });
-  if (!order.length) throw new Error('No MISTRAL_API_KEY or GEMINI_API_KEY set in Script Properties.');
+  if (!order.length) throw new Error('No OPENROUTER_API_KEY or GEMINI_API_KEY set in Script Properties.');
   return order;
 }
 
@@ -278,14 +282,14 @@ function tryChat_(name, system, message, schema, codes, max) {
         { role: 'system', content: system + '\n\nReply with ONLY a JSON object of exactly this shape:\n' + JSON.stringify(shapeOf_(schema)) },
         { role: 'user', content: message }
       ],
-      response_format: { type: 'json_object' },
       temperature: 0.9
     };
+    if (!svc.loose) body.response_format = { type: 'json_object' };   // free OpenRouter models vary, so we parse loosely instead
     if (/gpt-oss/.test(models[i])) body.reasoning_effort = 'low';
     used++;
     var res = UrlFetchApp.fetch(svc.base + 'chat/completions', {
       method: 'post', contentType: 'application/json', muteHttpExceptions: true,
-      headers: { Authorization: 'Bearer ' + prop_(svc.key) }, payload: JSON.stringify(body)
+      headers: Object.assign({ Authorization: 'Bearer ' + prop_(svc.key) }, svc.headers || {}), payload: JSON.stringify(body)
     });
     var code = res.getResponseCode();
     if (code === 200) {
@@ -293,13 +297,23 @@ function tryChat_(name, system, message, schema, codes, max) {
       var content = ((((JSON.parse(res.getContentText()).choices || [])[0] || {}).message) || {}).content;
       if (Array.isArray(content)) content = content.map(function (c) { return c.text || ''; }).join('');
       if (!content) throw new Error('The librarian was lost for words. Please try again.');
-      return { out: JSON.parse(content), used: used };
+      return { out: parseJsonLoose_(content), used: used };
     }
     codes.push(name + '/' + models[i] + ': ' + code);
     console.log(svc.label + ' ' + models[i] + ' returned ' + code + ': ' + res.getContentText().slice(0, 500));
-    if (code !== 404 && code !== 400) break;   // busy or rate-limited: don't hammer, move to the backup
+    if (code !== 404 && code !== 400) break;   // busy, rate-limited or refused: don't hammer, move to the backup
   }
   return { out: null, used: used };
+}
+
+/** Reads a JSON object even if the model wrapped it in ```json fences or a sentence. */
+function parseJsonLoose_(text) {
+  try { return JSON.parse(text); } catch (e) { /* fall through */ }
+  var start = text.indexOf('{'), end = text.lastIndexOf('}');
+  if (start !== -1 && end > start) {
+    try { return JSON.parse(text.slice(start, end + 1)); } catch (e) { /* fall through */ }
+  }
+  throw new Error('The librarian’s reply came back garbled. Please try again.');
 }
 
 /** Turns the reply schema into an example JSON shape for models without schema support. */
@@ -376,6 +390,9 @@ function testGemini() {
 /** Run from the editor: lists the models your Mistral key can use and sends a test hello. */
 function testMistral() { testChat_('mistral'); }
 
+/** Run from the editor: lists the FREE OpenRouter models and sends a test hello. */
+function testOpenRouter() { testChat_('openrouter'); }
+
 /** Run from the editor: lists the models your Groq key can use and sends a test hello. */
 function testGroq() { testChat_('groq'); }
 
@@ -390,6 +407,7 @@ function testChat_(name) {
     return;
   }
   var ids = (JSON.parse(res.getContentText()).data || []).map(function (m) { return m.id; }).sort();
+  if (name === 'openrouter') ids = ids.filter(function (id) { return /:free$/.test(id); });
   Logger.log(svc.label + ' models your key can use:\n' + ids.join('\n'));
   Logger.log('Will try, in order: ' + chatModels_(name).join(', '));
   var out = callLLM_('Reply in British English.', 'Say hello to a book lover in one short sentence.',

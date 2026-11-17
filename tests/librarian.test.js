@@ -69,7 +69,7 @@ r = be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' });
 assert.ok(!r.ok && /busy/.test(r.error));
 assert.strictEqual(be.sheets.Meta.data[1][1], lastChat);  // failed chat doesn't count
 be = makeBackend(tabs(), { PASSCODE: 'p' }, () => reply([]));
-assert.match(be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' }).error, /MISTRAL_API_KEY or GEMINI_API_KEY/);
+assert.match(be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' }).error, /OPENROUTER_API_KEY or GEMINI_API_KEY/);
 assert.match(be.handle({ passcode: 'x', action: 'recommend', user: 'Sophie' }).error, /Wrong passcode/);
 
 // 5. Busy model: move straight on to the next model. Never more than 3 calls.
@@ -132,5 +132,23 @@ assert.strictEqual(be.calls[0].body.reasoning_effort, 'low');
 // Mistral key only
 be = makeBackend(tabs(), { PASSCODE: 'p', MISTRAL_API_KEY: 'm' }, null, null, () => reply([rec('From Mistral')]));
 assert.ok(be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' }).ok);
+
+// 8. OpenRouter free models: no response_format, tolerant of ```json fences, refused (403) -> backup
+const og = Object.assign({ OPENROUTER_API_KEY: 'o', GROQ_API_KEY: 'g' }, props);
+be = makeBackend(tabs(), og, () => 500, () => 403, null,
+  () => 'Here you go!\n```json\n' + JSON.stringify(reply([rec('From OpenRouter')])) + '\n```');
+r = be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' });
+assert.ok(r.ok, r.error);
+assert.strictEqual(r.model, 'openrouter/mistralai/mistral-small-3.2-24b-instruct:free');
+assert.strictEqual(be.calls[0].body.response_format, undefined);
+assert.strictEqual(be.calls.length, 1);
+// OpenRouter rate-limited, Groq refused -> Gemini answers, 3 requests in all
+be = makeBackend(tabs(), og, () => reply([rec('From Gemini')]), () => 403, null, () => 429);
+r = be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' });
+assert.ok(r.ok, r.error);
+assert.deepStrictEqual(be.calls.map((c) => c.provider), ['openrouter', 'groq', 'gemini']);
+// Garbled reply gives a friendly error
+be = makeBackend(tabs(), og, () => 500, () => 403, null, () => 'Sorry, no JSON today');
+assert.match(be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' }).error, /garbled/);
 
 console.log('All librarian tests passed');

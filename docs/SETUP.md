@@ -123,15 +123,19 @@ On your phone, pull down to refresh, open **Recommend**, optionally type a steer
 
 **Optional:** `testRecommend` in the `Librarian` file runs a full recommendation for Sophie and logs it. Note that it counts as a chat (it updates the last-chat time).
 
-### 6e. Groq as the main librarian (free, no card)
-Gemini's free Flash models were overloaded for us, and Mistral's API now needs a paid plan, so the librarian asks **Groq** first and uses Gemini as the backup. (Groq, with a q, runs open models such as OpenAI's gpt-oss and Meta's Llama. It is not Musk's Grok.)
-1. Go to **console.groq.com** and sign in (e.g. with Google). If it asks for a card, stop.
-2. **API Keys → Create API Key**, name it `reading-library`, copy it (it's only shown once).
-3. Apps Script → ⚙️ **Project Settings → Script Properties**: add `GROQ_API_KEY` = your key. Save.
-4. Paste the latest [`apps-script/Librarian.gs`](../apps-script/Librarian.gs) over your `Librarian` file and save.
-5. Run **testGroq**. The log lists the Groq models you can use, the order they'll be tried (`openai/gpt-oss-120b`, then `llama-3.3-70b-versatile`), and a test hello.
-6. Redeploy: **Deploy → Manage deployments → select it → ✏️ → New version → Deploy.**
+### 6e. OpenRouter as the main librarian (free models, no card)
+Gemini's free Flash models were overloaded, Mistral's API now needs a paid plan, and Groq refused access ("Access denied. Please check your network settings."). So the librarian asks **OpenRouter's free models** first (a free Mistral model, then a free Llama 70B) and uses Gemini as the backup.
+1. Go to **openrouter.ai** and sign in (e.g. with Google). Don't add credits or a card.
+2. Optional but recommended: **Settings → Privacy**. Free models may only be available if you allow providers that can log or train on prompts; leave the defaults unless testOpenRouter says no free models are allowed.
+3. **Keys → Create Key**, name it `reading-library`, leave the credit limit empty, copy the key (shown once).
+4. Apps Script → ⚙️ **Project Settings → Script Properties**: add `OPENROUTER_API_KEY` = your key. Save.
+5. Paste the latest [`apps-script/Librarian.gs`](../apps-script/Librarian.gs) over your `Librarian` file and save.
+6. Run **testOpenRouter**. The log lists the free models, the order they'll be tried, and a test hello.
+7. Redeploy: **Deploy → Manage deployments → select it → ✏️ → New version → Deploy.**
 
 Optional settings (Script Properties):
-- `GROQ_MODEL`: a model from the testGroq list to try first.
-- `LLM_ORDER`: the order to ask services in. Default `mistral,groq,gemini`; services without a key are skipped. `MISTRAL_API_KEY` is supported if you ever get one (run **testMistral**).
+- `OPENROUTER_MODEL`: a free model from the testOpenRouter list (ends in `:free`) to try first.
+- `LLM_ORDER`: default `mistral,openrouter,groq,gemini`; services without a key are skipped.
+- `MISTRAL_API_KEY` / `GROQ_API_KEY` still work if you ever get them.
+
+Free OpenRouter models have a small daily allowance (plenty for two people) and the list of free models changes from time to time. If the preferred ones disappear, run testOpenRouter and set `OPENROUTER_MODEL` to one from the list.

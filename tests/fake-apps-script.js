@@ -27,7 +27,7 @@ function fakeSheet(name, rows) {
 
 // gemini/groq/mistral(requestBody, model) return the object the
 // librarian would reply with, or a number to simulate an HTTP error.
-function makeBackend(tabs, props, gemini, groq, mistral) {
+function makeBackend(tabs, props, gemini, groq, mistral, openrouter) {
   const sheets = {};
   Object.keys(tabs).forEach((n) => { sheets[n] = fakeSheet(n, tabs[n]); });
   const cache = {};
@@ -40,13 +40,15 @@ function makeBackend(tabs, props, gemini, groq, mistral) {
     Utilities: { formatDate: (d) => d.toDateString(), sleep() {} },
     UrlFetchApp: {
       fetch: (url, opts) => {
-        const chat = url.includes('api.groq.com') ? ['groq', groq] : url.includes('api.mistral.ai') ? ['mistral', mistral] : null;
+        const chat = url.includes('api.groq.com') ? ['groq', groq] : url.includes('api.mistral.ai') ? ['mistral', mistral]
+          : url.includes('openrouter.ai') ? ['openrouter', openrouter] : null;
         if (chat) {
           const gbody = JSON.parse(opts.payload);
           calls.push({ provider: chat[0], model: gbody.model, body: gbody });
           const out = chat[1] ? chat[1](gbody, gbody.model) : 500;
           if (typeof out === 'number') return { getResponseCode: () => out, getContentText: () => '' };
-          const t = JSON.stringify({ choices: [{ message: { content: JSON.stringify(out) } }] });
+          const content = typeof out === 'string' ? out : JSON.stringify(out);   // a string simulates messy output
+          const t = JSON.stringify({ choices: [{ message: { content } }] });
           return { getResponseCode: () => 200, getContentText: () => t };
         }
         const model = (url.match(/models\/([^:]+):/) || [])[1];
