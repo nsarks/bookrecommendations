@@ -3,11 +3,12 @@
  * model for recommendations. Free tiers only: no billing is ever linked.
  *
  * Script Properties (at least one key is needed):
- *   GROQ_API_KEY    from console.groq.com   (tried first)
+ *   MISTRAL_API_KEY from console.mistral.ai  (asked first)
  *   GEMINI_API_KEY  from aistudio.google.com (backup)
- *   GROQ_MODEL      optional; run testGroq() to see what's available
- *   GEMINI_MODEL    optional; run testGemini() to see what's available
- *   LLM_ORDER       optional; e.g. "gemini,groq" to ask Gemini first
+ *   GROQ_API_KEY    from console.groq.com    (optional extra backup)
+ *   MISTRAL_MODEL / GEMINI_MODEL / GROQ_MODEL  optional; run testMistral(),
+ *                   testGemini() or testGroq() to see what's available
+ *   LLM_ORDER       optional; default "mistral,gemini,groq" (services without a key are skipped)
  * At most 3 requests are made per question.
  */
 var DEFAULT_MODEL = 'gemini-flash-latest';
@@ -161,11 +162,16 @@ function librarianSchema_() {
   };
 }
 
-// ---------- language models (Groq first, Gemini as backup) ----------
+// ---------- language models (Mistral first, then Gemini, then Groq) ----------
 
-var GROQ_BASE = 'https://api.groq.com/openai/v1/';
-// Preferred Groq models, best first. A missing one is skipped instantly.
-var GROQ_MODELS = ['openai/gpt-oss-120b', 'llama-3.3-70b-versatile'];
+// Services that use the common "chat completions" request style.
+// Models are listed best first; a missing one is skipped instantly.
+var CHAT_SERVICES = {
+  mistral: { label: 'Mistral', base: 'https://api.mistral.ai/v1/', key: 'MISTRAL_API_KEY', modelProp: 'MISTRAL_MODEL',
+    models: ['mistral-large-latest', 'mistral-medium-latest'] },
+  groq: { label: 'Groq', base: 'https://api.groq.com/openai/v1/', key: 'GROQ_API_KEY', modelProp: 'GROQ_MODEL',
+    models: ['openai/gpt-oss-120b', 'llama-3.3-70b-versatile'] }
+};
 
 function prop_(k) { return PropertiesService.getScriptProperties().getProperty(k); }
 
@@ -177,10 +183,10 @@ function geminiKey_() {
 
 /** Which services to ask, in order. LLM_ORDER (e.g. "gemini,groq") overrides. */
 function providers_() {
-  var order = (prop_('LLM_ORDER') || 'groq,gemini').split(',').map(function (x) { return x.trim(); });
-  var keys = { groq: prop_('GROQ_API_KEY'), gemini: prop_('GEMINI_API_KEY') };
+  var order = (prop_('LLM_ORDER') || 'mistral,gemini,groq').split(',').map(function (x) { return x.trim().toLowerCase(); });
+  var keys = { mistral: prop_('MISTRAL_API_KEY'), gemini: prop_('GEMINI_API_KEY'), groq: prop_('GROQ_API_KEY') };
   order = order.filter(function (p) { return keys[p]; });
-  if (!order.length) throw new Error('No GROQ_API_KEY or GEMINI_API_KEY set in Script Properties.');
+  if (!order.length) throw new Error('No MISTRAL_API_KEY or GEMINI_API_KEY set in Script Properties.');
   return order;
 }
 
@@ -190,9 +196,10 @@ function geminiModels_() {
   return [chosen].concat(FALLBACK_MODELS.filter(function (m) { return m !== chosen; }));
 }
 
-function groqModels_() {
-  var chosen = prop_('GROQ_MODEL');
-  var list = (chosen ? [chosen] : []).concat(GROQ_MODELS);
+function chatModels_(name) {
+  var svc = CHAT_SERVICES[name];
+  var chosen = prop_(svc.modelProp);
+  var list = (chosen ? [chosen] : []).concat(svc.models);
   return list.filter(function (m, i) { return list.indexOf(m) === i; });
 }
 
@@ -213,9 +220,9 @@ function callLLM_(system, message, schema, only) {
   for (var i = 0; i < order.length && budget > 0; i++) {
     // With a backup service available, give the first one up to 2 tries and the backup 1.
     var share = order.length > 1 ? (i === 0 ? 2 : budget) : budget;
-    var res = order[i] === 'groq'
-      ? tryGroq_(system, message, schema, codes, share)
-      : tryGemini_(system, message, schema, codes, share);
+    var res = order[i] === 'gemini'
+      ? tryGemini_(system, message, schema, codes, share)
+      : tryChat_(order[i], system, message, schema, codes, share);
     budget -= res.used;
     if (res.out) return res.out;
   }
@@ -260,8 +267,9 @@ function tryGemini_(system, message, schema, codes, max) {
   return { out: null, used: models.length };
 }
 
-function tryGroq_(system, message, schema, codes, max) {
-  var models = groqModels_().slice(0, max);
+function tryChat_(name, system, message, schema, codes, max) {
+  var svc = CHAT_SERVICES[name];
+  var models = chatModels_(name).slice(0, max);
   var used = 0;
   for (var i = 0; i < models.length; i++) {
     var body = {
@@ -275,19 +283,20 @@ function tryGroq_(system, message, schema, codes, max) {
     };
     if (/gpt-oss/.test(models[i])) body.reasoning_effort = 'low';
     used++;
-    var res = UrlFetchApp.fetch(GROQ_BASE + 'chat/completions', {
+    var res = UrlFetchApp.fetch(svc.base + 'chat/completions', {
       method: 'post', contentType: 'application/json', muteHttpExceptions: true,
-      headers: { Authorization: 'Bearer ' + prop_('GROQ_API_KEY') }, payload: JSON.stringify(body)
+      headers: { Authorization: 'Bearer ' + prop_(svc.key) }, payload: JSON.stringify(body)
     });
     var code = res.getResponseCode();
     if (code === 200) {
-      lastModelUsed = 'groq/' + models[i];
+      lastModelUsed = name + '/' + models[i];
       var content = ((((JSON.parse(res.getContentText()).choices || [])[0] || {}).message) || {}).content;
+      if (Array.isArray(content)) content = content.map(function (c) { return c.text || ''; }).join('');
       if (!content) throw new Error('The librarian was lost for words. Please try again.');
       return { out: JSON.parse(content), used: used };
     }
-    codes.push('groq/' + models[i] + ': ' + code);
-    console.log('Groq ' + models[i] + ' returned ' + code + ': ' + res.getContentText().slice(0, 500));
+    codes.push(name + '/' + models[i] + ': ' + code);
+    console.log(svc.label + ' ' + models[i] + ' returned ' + code + ': ' + res.getContentText().slice(0, 500));
     if (code !== 404 && code !== 400) break;   // busy or rate-limited: don't hammer, move to the backup
   }
   return { out: null, used: used };
@@ -364,20 +373,27 @@ function testGemini() {
   Logger.log('Test reply from ' + lastModelUsed + ': ' + out.hello);
 }
 
-/** Run from the editor: lists Groq models your key can use and sends a test hello. */
-function testGroq() {
-  var res = UrlFetchApp.fetch(GROQ_BASE + 'models', {
-    headers: { Authorization: 'Bearer ' + prop_('GROQ_API_KEY') }, muteHttpExceptions: true
+/** Run from the editor: lists the models your Mistral key can use and sends a test hello. */
+function testMistral() { testChat_('mistral'); }
+
+/** Run from the editor: lists the models your Groq key can use and sends a test hello. */
+function testGroq() { testChat_('groq'); }
+
+function testChat_(name) {
+  var svc = CHAT_SERVICES[name];
+  if (!prop_(svc.key)) { Logger.log('No ' + svc.key + ' in Script Properties.'); return; }
+  var res = UrlFetchApp.fetch(svc.base + 'models', {
+    headers: { Authorization: 'Bearer ' + prop_(svc.key) }, muteHttpExceptions: true
   });
   if (res.getResponseCode() !== 200) {
     Logger.log('Key check failed (' + res.getResponseCode() + '): ' + res.getContentText().slice(0, 300));
     return;
   }
   var ids = (JSON.parse(res.getContentText()).data || []).map(function (m) { return m.id; }).sort();
-  Logger.log('Groq models your key can use:\n' + ids.join('\n'));
-  Logger.log('Will try, in order: ' + groqModels_().join(', '));
+  Logger.log(svc.label + ' models your key can use:\n' + ids.join('\n'));
+  Logger.log('Will try, in order: ' + chatModels_(name).join(', '));
   var out = callLLM_('Reply in British English.', 'Say hello to a book lover in one short sentence.',
-    { type: 'OBJECT', properties: { hello: { type: 'STRING' } }, required: ['hello'] }, 'groq');
+    { type: 'OBJECT', properties: { hello: { type: 'STRING' } }, required: ['hello'] }, name);
   Logger.log('Test reply from ' + lastModelUsed + ': ' + out.hello);
 }
 

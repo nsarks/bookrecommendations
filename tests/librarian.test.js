@@ -69,7 +69,7 @@ r = be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' });
 assert.ok(!r.ok && /busy/.test(r.error));
 assert.strictEqual(be.sheets.Meta.data[1][1], lastChat);  // failed chat doesn't count
 be = makeBackend(tabs(), { PASSCODE: 'p' }, () => reply([]));
-assert.match(be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' }).error, /GROQ_API_KEY or GEMINI_API_KEY/);
+assert.match(be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' }).error, /MISTRAL_API_KEY or GEMINI_API_KEY/);
 assert.match(be.handle({ passcode: 'x', action: 'recommend', user: 'Sophie' }).error, /Wrong passcode/);
 
 // 5. Busy model: move straight on to the next model. Never more than 3 calls.
@@ -98,39 +98,39 @@ be = makeBackend(tabs(), Object.assign({ GEMINI_MODEL: 'gemini-3-flash' }, props
 be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' });
 assert.strictEqual(be.calls[0].model, 'gemini-3-flash');
 
-// 7. Groq first, Gemini as backup
-const both = Object.assign({ GROQ_API_KEY: 'g' }, props);
-be = makeBackend(tabs(), both, () => reply([rec('From Gemini')]), () => reply([rec('From Groq')]));
+// 7. Mistral first, Gemini as backup (Groq only if it has a key)
+const mg = Object.assign({ MISTRAL_API_KEY: 'm' }, props);
+be = makeBackend(tabs(), mg, () => reply([rec('From Gemini')]), null, () => reply([rec('From Mistral')]));
 r = be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' });
-assert.deepStrictEqual(r.reply.recommendations.map((x) => x.title), ['From Groq']);
-assert.strictEqual(r.model, 'groq/openai/gpt-oss-120b');
+assert.deepStrictEqual(r.reply.recommendations.map((x) => x.title), ['From Mistral']);
+assert.strictEqual(r.model, 'mistral/mistral-large-latest');
 assert.strictEqual(be.calls.length, 1);
-const gb = be.calls[0].body;
-assert.strictEqual(gb.response_format.type, 'json_object');
-assert.strictEqual(gb.reasoning_effort, 'low');
-assert.match(gb.messages[0].content, /Sophie's personal librarian[\s\S]*ONLY a JSON object[\s\S]*"type":"Safe Bet \| Wildcard"/);
-assert.match(gb.messages[1].content, /Rebecca \| Daphne du Maurier/);
-// Groq busy -> one Gemini request
-be = makeBackend(tabs(), both, () => reply([rec('From Gemini')]), () => 503);
+const mb = be.calls[0].body;
+assert.strictEqual(mb.response_format.type, 'json_object');
+assert.strictEqual(mb.reasoning_effort, undefined);
+assert.match(mb.messages[0].content, /Sophie's personal librarian[\s\S]*ONLY a JSON object[\s\S]*"type":"Safe Bet \| Wildcard"/);
+assert.match(mb.messages[1].content, /Rebecca \| Daphne du Maurier/);
+// Mistral rate-limited -> Gemini
+be = makeBackend(tabs(), mg, () => reply([rec('From Gemini')]), null, () => 429);
 r = be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' });
 assert.strictEqual(r.model, 'gemini-flash-latest');
-assert.deepStrictEqual(be.calls.map((c) => c.provider), ['groq', 'gemini']);
-// Missing Groq model -> next Groq model (no wasted Gemini call)
-be = makeBackend(tabs(), both, () => 500, (b, m) => (m === 'openai/gpt-oss-120b' ? 404 : reply([rec('From Llama')])));
+assert.deepStrictEqual(be.calls.map((c) => c.provider), ['mistral', 'gemini']);
+// Missing Mistral model -> next Mistral model
+be = makeBackend(tabs(), mg, () => 500, null, (b, m) => (m === 'mistral-large-latest' ? 404 : reply([rec('From Medium')])));
 r = be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' });
-assert.strictEqual(r.model, 'groq/llama-3.3-70b-versatile');
-assert.strictEqual(be.calls.length, 2);
-// Everything busy: still at most 3 requests
-be = makeBackend(tabs(), both, () => 503, () => 503);
+assert.strictEqual(r.model, 'mistral/mistral-medium-latest');
+// Everything busy, all three services configured: still at most 3 requests
+be = makeBackend(tabs(), Object.assign({ GROQ_API_KEY: 'g' }, mg), () => 503, () => 503, () => 503);
 r = be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' });
-assert.match(r.error, /very busy.*groq\/openai\/gpt-oss-120b: 503, gemini-flash-latest: 503, gemini-3.7-flash: 503/);
+assert.match(r.error, /very busy.*mistral\/mistral-large-latest: 503, gemini-flash-latest: 503, gemini-3.7-flash: 503/);
 assert.strictEqual(be.calls.length, 3);
-// LLM_ORDER puts Gemini first
-be = makeBackend(tabs(), Object.assign({ LLM_ORDER: 'gemini,groq' }, both), () => reply([rec('From Gemini')]), () => reply([rec('From Groq')]));
+// Groq via LLM_ORDER, with gpt-oss reasoning turned down
+be = makeBackend(tabs(), Object.assign({ GROQ_API_KEY: 'g', LLM_ORDER: 'groq,gemini' }, props), () => 500, () => reply([rec('From Groq')]));
 r = be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' });
-assert.strictEqual(be.calls[0].provider, 'gemini');
-// Groq key only
-be = makeBackend(tabs(), { PASSCODE: 'p', GROQ_API_KEY: 'g' }, null, () => reply([rec('From Groq')]));
+assert.strictEqual(r.model, 'groq/openai/gpt-oss-120b');
+assert.strictEqual(be.calls[0].body.reasoning_effort, 'low');
+// Mistral key only
+be = makeBackend(tabs(), { PASSCODE: 'p', MISTRAL_API_KEY: 'm' }, null, null, () => reply([rec('From Mistral')]));
 assert.ok(be.handle({ passcode: 'p', action: 'recommend', user: 'Sophie' }).ok);
 
 console.log('All librarian tests passed');
