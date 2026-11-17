@@ -66,3 +66,25 @@ Keep the URL somewhere handy (e.g. a note on your phone). It isn't secret like t
 
 ### 2e. Make the repository public (for GitHub Pages)
 On GitHub: the repo → **Settings → General →** scroll to **Danger Zone → Change visibility → Make public.** Nothing personal is stored in the repo: your books live in the Sheet and the passcode lives in Script Properties.
+
+## Stage 3: Put the app online (GitHub Pages) and try the Library
+
+Do Stage 2 first. You need the backend's `/exec` address and your passcode.
+
+### 3a. Turn on GitHub Pages
+1. On GitHub, open the repository → **Settings → Pages** (left sidebar).
+2. Under **Build and deployment → Source**, choose **Deploy from a branch**.
+3. Branch: **`claude/reading-library-pwa-di19cb`**, folder **`/ (root)`** → **Save**.
+4. Wait a minute or two and refresh. The page shows **"Your site is live at https://nsarks.github.io/bookrecommendations/"**.
+
+(Later, once we merge into `main`, we'll switch this to `main`.)
+
+### 3b. Try it on your phone
+1. Open **https://nsarks.github.io/bookrecommendations/** in Chrome.
+2. **Backend address:** paste the Web app URL from Stage 2 (ends in `/exec`). **Passcode:** yours. Tap **Connect**.
+3. Choose **Sophie** or **Nick**. You should see the shelf, with search and the Read / TBR / Stopped Reading chips. Tap a book to see its details. A ⚑ marks books that need attention, such as a missing rating.
+
+The phone remembers the address, passcode and chosen person. Use **switch user** to change person, and ⚙︎ to change the connection.
+
+### Trying it locally (optional, for developing)
+`node tests/mock-server.js`, then open http://localhost:8080 and use backend address `http://localhost:8080/exec` with passcode `test`. This uses made-up sample books, not your Sheet.

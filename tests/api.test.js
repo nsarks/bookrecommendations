@@ -1,46 +1,15 @@
 // Run with: node tests/api.test.js
 // Tests the backend logic against a pretend in-memory spreadsheet.
 const assert = require('assert');
-const fs = require('fs');
-const path = require('path');
+const { makeBackend, HEADERS: H } = require('./fake-apps-script');
 
-function fakeSheet(name, rows) {
-  const data = rows.map(r => r.slice());
-  return {
-    getName: () => name,
-    getLastRow: () => data.length,
-    getLastColumn: () => data[0].length,
-    getRange: (r, c, nr, nc) => ({
-      getValues: () => data.slice(r - 1, r - 1 + nr).map(row => row.slice(c - 1, c - 1 + nc)),
-      setValues: vals => vals.forEach((v, i) => {
-        while (data.length < r + i) data.push(new Array(data[0].length).fill(''));
-        v.forEach((x, j) => { data[r - 1 + i][c - 1 + j] = x; });
-      })
-    }),
-    deleteRow: r => data.splice(r - 1, 1),
-    data
-  };
-}
-
-const store = { PASSCODE: 'secret' };
-const cache = {};
-let sheets;
-const env = {
-  PropertiesService: { getScriptProperties: () => ({ getProperty: k => store[k] }) },
-  CacheService: { getScriptCache: () => ({ get: k => cache[k], put: (k, v) => { cache[k] = v; }, remove: k => delete cache[k] }) },
-  LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
-  SpreadsheetApp: { getActiveSpreadsheet: () => ({ getSheetByName: n => sheets[n] }) },
-  ContentService: {}, Logger: { log() {} }
-};
-const src = ['Cleaning.gs', 'Api.gs'].map(f => fs.readFileSync(path.join(__dirname, '../apps-script', f), 'utf8')).join('\n');
-const api = new Function(...Object.keys(env), 'module', src + '\nreturn { handle_ };')(...Object.values(env), undefined);
-
-const H = ['Title', 'Author', 'Rating', 'Commentary', 'Status', 'Added', 'Updated', 'Needs attention'];
-sheets = {
-  Sophie: fakeSheet('Sophie', [H, ['The Secret History', 'Donna Tartt', 7, 'Long', 'Read', '', '', ''],
-    ['Atmosphere', 'Taylor Jenkins Reid', '', '', 'Read', '', '', 'Missing rating']]),
-  Nick: fakeSheet('Nick', [H])
-};
+const be = makeBackend({
+  Sophie: [H, ['The Secret History', 'Donna Tartt', 7, 'Long', 'Read', '', '', ''],
+    ['Atmosphere', 'Taylor Jenkins Reid', '', '', 'Read', '', '', 'Missing rating']],
+  Nick: [H]
+}, { PASSCODE: 'secret' });
+const sheets = be.sheets;
+const api = { handle_: be.handle };
 const call = (o) => api.handle_(Object.assign({ passcode: 'secret' }, o));
 
 // Passcode
